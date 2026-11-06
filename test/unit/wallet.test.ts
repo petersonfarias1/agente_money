@@ -97,8 +97,18 @@ describe('Core ApexWallet Unit Tests', () => {
       assert.equal(await wallet.getTotalBalanceUsd(), 15.0);
     });
 
-    it('should reject negative balance setting', () => {
+    it('should reject negative balance setting by default', () => {
       assert.throws(() => wallet.setMockBalance('base', -5), WalletError);
+    });
+
+    it('should allow negative balance setting when allowDeficit is true', async () => {
+      wallet.setMockBalance('base', -25.0, true);
+      assert.equal(await wallet.getBaseUsdcBalance(), -25.0);
+      assert.equal(await wallet.getTotalBalanceUsd(), 12.5);
+
+      wallet.setMockDeficit('polygon', 50.0);
+      assert.equal(await wallet.getPolygonUsdcBalance(), -50.0);
+      assert.equal(await wallet.getTotalBalanceUsd(), -75.0);
     });
 
     it('should reset mock state to initial config defaults', async () => {
@@ -139,9 +149,21 @@ describe('Core ApexWallet Unit Tests', () => {
       assert.equal(wallet.isWhitelisted(childWallet), false);
     });
 
-    it('should reject adding zero address to whitelist with ConstitutionViolationError', () => {
+    it('should accept uppercase 0X prefix when adding to whitelist and normalize matching', () => {
+      const upperAddress = '0XABCDEF0123456789ABCDEF0123456789ABCDEF01';
+      wallet.addToWhitelist(upperAddress, 'CUSTOM', 'Upper Address');
+      assert.equal(wallet.isWhitelisted(upperAddress), true);
+      assert.equal(wallet.isWhitelisted(upperAddress.toLowerCase()), true);
+      wallet.removeFromWhitelist(upperAddress);
+    });
+
+    it('should reject adding zero address to whitelist with ConstitutionViolationError regardless of prefix casing', () => {
       assert.throws(
         () => wallet.addToWhitelist(ZERO_ADDRESS),
+        ConstitutionViolationError
+      );
+      assert.throws(
+        () => wallet.addToWhitelist('0X0000000000000000000000000000000000000000'),
         ConstitutionViolationError
       );
     });
@@ -149,6 +171,10 @@ describe('Core ApexWallet Unit Tests', () => {
     it('should reject adding malformed address to whitelist with InvalidAddressError', () => {
       assert.throws(
         () => wallet.addToWhitelist('0xnotanaddress'),
+        InvalidAddressError
+      );
+      assert.throws(
+        () => wallet.addToWhitelist('0Xnotanaddress'),
         InvalidAddressError
       );
     });
@@ -172,9 +198,13 @@ describe('Core ApexWallet Unit Tests', () => {
       assert.equal(records[0].chain, 'base');
     });
 
-    it('should reject transfer to zero address with ConstitutionViolationError', async () => {
+    it('should reject transfer to zero address with ConstitutionViolationError regardless of prefix casing', async () => {
       await assert.rejects(
         () => wallet.transferUsdc('base', ZERO_ADDRESS, 5.0),
+        ConstitutionViolationError
+      );
+      await assert.rejects(
+        () => wallet.transferUsdc('base', '0X0000000000000000000000000000000000000000', 5.0),
         ConstitutionViolationError
       );
     });

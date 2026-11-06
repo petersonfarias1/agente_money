@@ -147,8 +147,9 @@ export function numberToUsdcUnits(amountUsd: number): bigint {
   if (!Number.isFinite(amountUsd) || amountUsd < 0) {
     throw new WalletError(`Invalid USD amount for conversion: ${amountUsd}`);
   }
-  const atomicUnits = Math.round(amountUsd * 1_000_000);
-  return BigInt(atomicUnits);
+  const str = amountUsd.toFixed(USDC_DECIMALS);
+  const [whole, frac] = str.split('.');
+  return BigInt(whole) * 1_000_000n + BigInt(frac);
 }
 
 /**
@@ -166,7 +167,7 @@ function normalizeAddress(address: string): string {
  */
 function deriveAddressFromPrivateKey(privKeyHex: string): string {
   try {
-    const cleanKey = privKeyHex.startsWith('0x') ? privKeyHex.slice(2) : privKeyHex;
+    const cleanKey = privKeyHex.replace(/^0[xX]/, '');
     const ecdh = crypto.createECDH('secp256k1');
     ecdh.setPrivateKey(Buffer.from(cleanKey, 'hex'));
     const uncompressedPub = ecdh.getPublicKey(); // 65 bytes, starts with 0x04
@@ -188,7 +189,9 @@ function deriveAddressFromPrivateKey(privKeyHex: string): string {
 
 export class ApexWallet implements WalletClient {
   private readonly config: AppConfig;
-  private readonly address: string;
+  private address: string;
+  private account?: any;
+  private viemInitPromise?: Promise<void>;
   private readonly isMock: boolean;
   private readonly whitelist: Map<string, WhitelistEntry> = new Map();
 
@@ -291,46 +294,60 @@ export class ApexWallet implements WalletClient {
 
   private async ensureViemClients(): Promise<void> {
     if (this.viemClientsInitialized) return;
+    if (this.viemInitPromise) return this.viemInitPromise;
 
-    try {
-      const viem = await import('viem');
-      const viemAccounts = await import('viem/accounts');
-      const viemChains = await import('viem/chains');
+    this.viemInitPromise = (async () => {
+      try {
+        const viem = await import('viem');
+        const viemAccounts = await import('viem/accounts');
+        const viemChains = await import('viem/chains');
 
-      const account = viemAccounts.privateKeyToAccount(this.config.privateKey as `0x${string}`);
-      const isTestnet = this.config.networkMode === 'testnet';
+        const formattedKey = (
+          this.config.privateKey.startsWith('0X')
+            ? '0x' + this.config.privateKey.slice(2)
+            : this.config.privateKey
+        ) as `0x${string}`;
 
-      const baseChain = isTestnet ? viemChains.baseSepolia : viemChains.base;
-      const polygonChain = isTestnet ? viemChains.polygonAmoy : viemChains.polygon;
+        const account = viemAccounts.privateKeyToAccount(formattedKey);
+        this.account = account;
+        this.address = account.address;
 
-      this.basePublicClient = viem.createPublicClient({
-        chain: baseChain,
-        transport: viem.http(this.config.network.baseRpcUrl),
-      });
+        const isTestnet = this.config.networkMode === 'testnet';
 
-      this.polygonPublicClient = viem.createPublicClient({
-        chain: polygonChain,
-        transport: viem.http(this.config.network.polygonRpcUrl),
-      });
+        const baseChain = isTestnet ? viemChains.baseSepolia : viemChains.base;
+        const polygonChain = isTestnet ? viemChains.polygonAmoy : viemChains.polygon;
 
-      this.baseWalletClient = viem.createWalletClient({
-        account,
-        chain: baseChain,
-        transport: viem.http(this.config.network.baseRpcUrl),
-      });
+        this.basePublicClient = viem.createPublicClient({
+          chain: baseChain,
+          transport: viem.http(this.config.network.baseRpcUrl),
+        });
 
-      this.polygonWalletClient = viem.createWalletClient({
-        account,
-        chain: polygonChain,
-        transport: viem.http(this.config.network.polygonRpcUrl),
-      });
+        this.polygonPublicClient = viem.createPublicClient({
+          chain: polygonChain,
+          transport: viem.http(this.config.network.polygonRpcUrl),
+        });
 
-      this.viemClientsInitialized = true;
-    } catch (err) {
-      throw new WalletError(
-        `Failed to initialize live Viem client. Ensure 'viem' dependency is installed: ${(err as Error).message}`
-      );
-    }
+        this.baseWalletClient = viem.createWalletClient({
+          account,
+          chain: baseChain,
+          transport: viem.http(this.config.network.baseRpcUrl),
+        });
+
+        this.polygonWalletClient = viem.createWalletClient({
+          account,
+          chain: polygonChain,
+          transport: viem.http(this.config.network.polygonRpcUrl),
+        });
+
+        this.viemClientsInitialized = true;
+      } catch (err) {
+        throw new WalletError(
+          `Failed to initialize live Viem client. Ensure 'viem' dependency is installed: ${(err as Error).message}`
+        );
+      }
+    })();
+
+    return this.viemInitPromise;
   }
 
   // ----------------------------------------------------------------------------
@@ -538,9 +555,19 @@ export class ApexWallet implements WalletClient {
   // Mock Control & Test Ergonomics (Available when isMock=true)
   // ----------------------------------------------------------------------------
 
-  public setMockBalance(chain: SupportedChain, amountUsd: number): void {
+  public setMockBalance(
+    chain: SupportedChain,
+    amountUsd: number,
+    options?: { allowDeficit?: boolean } | boolean
+  ): void {
     if (!this.isMock) throw new WalletError('Cannot set mock balance in live mode');
-    if (amountUsd < 0) throw new WalletError('Balance cannot be negative');
+    if (!Number.isFinite(amountUsd)) {
+      throw new WalletError(`Invalid mock balance amount: ${amountUsd}`);
+    }
+    const allowDeficit = typeof options === 'boolean' ? options : options?.allowDeficit ?? false;
+    if (amountUsd < 0 && !allowDeficit) {
+      throw new WalletError('Balance cannot be negative');
+    }
     if (chain === 'base') {
       this.mockBaseUsdc = Number(amountUsd.toFixed(USDC_DECIMALS));
     } else {
@@ -548,9 +575,17 @@ export class ApexWallet implements WalletClient {
     }
   }
 
-  public setMockBalances(balances: { base?: number; polygon?: number }): void {
-    if (balances.base !== undefined) this.setMockBalance('base', balances.base);
-    if (balances.polygon !== undefined) this.setMockBalance('polygon', balances.polygon);
+  public setMockBalances(
+    balances: { base?: number; polygon?: number },
+    options?: { allowDeficit?: boolean } | boolean
+  ): void {
+    if (balances.base !== undefined) this.setMockBalance('base', balances.base, options);
+    if (balances.polygon !== undefined) this.setMockBalance('polygon', balances.polygon, options);
+  }
+
+  public setMockDeficit(chain: SupportedChain, deficitUsd: number): void {
+    const amount = -Math.abs(deficitUsd);
+    this.setMockBalance(chain, amount, true);
   }
 
   public getMockTransfers(): MockTransferRecord[] {

@@ -101,17 +101,17 @@ export function parseEnvFile(content: string): Record<string, string> {
 }
 
 /**
- * Validates a 20-byte hexadecimal Ethereum address (with 0x prefix).
+ * Validates a 20-byte hexadecimal Ethereum address (with 0x or 0X prefix).
  */
 export function isValidAddress(address: string): boolean {
-  return /^0x[0-9a-fA-F]{40}$/.test(address);
+  return /^0[xX][0-9a-fA-F]{40}$/.test(address);
 }
 
 /**
- * Validates a 32-byte hexadecimal private key (with 0x prefix).
+ * Validates a 32-byte hexadecimal private key (with 0x or 0X prefix).
  */
 export function isValidPrivateKey(key: string): boolean {
-  return /^0x[0-9a-fA-F]{64}$/.test(key);
+  return /^0[xX][0-9a-fA-F]{64}$/.test(key);
 }
 
 /**
