@@ -299,3 +299,9 @@ export * from './modules/polymarket/order.ts';
 export * from './modules/micropayments/server.ts';
 export * from './modules/bounties/scanner.ts';
 
+// ==============================================================================
+// 9. Re-Export Evolution Modules
+// ==============================================================================
+export * from './evolution/immune_system.ts';
+export * from './evolution/mitosis.ts';
+
