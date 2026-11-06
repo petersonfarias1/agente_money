@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build Output
+dist/
+
+# Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+
+# SQLite Databases & Persistence Data
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+data/
+
+# Permadeath Snapshot (runtime output)
+tombstone.json
+
+# Agent Teamwork Metadata (protects agent memory from git rollbacks)
+.agents/teamwork/
+
+# OS and Editor Artifacts
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*

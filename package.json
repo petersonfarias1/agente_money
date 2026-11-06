@@ -1,0 +1,19 @@
+{
+  "name": "apex-aea",
+  "version": "1.0.0",
+  "description": "Apex Autonomous Economic Agent (Apex AEA) - Sovereign Crypto-Native AI Agent",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "npx tsc --noEmit",
+    "test": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test test/**/*.test.ts",
+    "start": "node --experimental-strip-types --no-warnings=ExperimentalWarning src/index.ts"
+  },
+  "dependencies": {
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.0"
+  }
+}
