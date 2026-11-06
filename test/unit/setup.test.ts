@@ -91,6 +91,76 @@ describe('Milestone 1: Canonical Setup, Config & Governance Verification', () =>
       assert.equal(parsed.NETWORK_MODE, 'mock');
       assert.equal(parsed.INITIAL_CAPITAL_USD, '75.00');
     });
+
+    it('should strip quotes cleanly when inline comments follow double- or single-quoted values', () => {
+      const content = `
+        NETWORK_MODE="mock" # local development mode
+        NETWORK_MODE_SINGLE='testnet' # Amoy and Sepolia network
+        QUOTED_WITH_SPACES="hello world" # comment with spaces
+        PORT_X402="4020"    # paywall port with multiple spaces
+        COMMENT_WITH_EQUALS="production" # mode=prod override
+        COMMENT_WITH_QUOTES="active" # status is "active"
+        EMPTY_DOUBLE="" # empty double quote
+        EMPTY_SINGLE='' # empty single quote
+      `;
+      const parsed = parseEnvFile(content);
+      assert.equal(parsed.NETWORK_MODE, 'mock');
+      assert.equal(parsed.NETWORK_MODE_SINGLE, 'testnet');
+      assert.equal(parsed.QUOTED_WITH_SPACES, 'hello world');
+      assert.equal(parsed.PORT_X402, '4020');
+      assert.equal(parsed.COMMENT_WITH_EQUALS, 'production');
+      assert.equal(parsed.COMMENT_WITH_QUOTES, 'active');
+      assert.equal(parsed.EMPTY_DOUBLE, '');
+      assert.equal(parsed.EMPTY_SINGLE, '');
+    });
+
+    it('should preserve hash (#) characters located inside quotes', () => {
+      const content = `
+        HASH_DOUBLE="foo#bar"
+        HASH_SINGLE='foo#bar'
+        COLOR_HEX="#10b981"
+        DOCS_URL="https://example.com/api#section"
+        MULTIPLE_HASHES="alpha#beta#gamma"
+        LEADING_HASH="#leading"
+        TRAILING_HASH="trailing#"
+      `;
+      const parsed = parseEnvFile(content);
+      assert.equal(parsed.HASH_DOUBLE, 'foo#bar');
+      assert.equal(parsed.HASH_SINGLE, 'foo#bar');
+      assert.equal(parsed.COLOR_HEX, '#10b981');
+      assert.equal(parsed.DOCS_URL, 'https://example.com/api#section');
+      assert.equal(parsed.MULTIPLE_HASHES, 'alpha#beta#gamma');
+      assert.equal(parsed.LEADING_HASH, '#leading');
+      assert.equal(parsed.TRAILING_HASH, 'trailing#');
+    });
+
+    it('should preserve hash (#) inside quotes while stripping trailing inline comments', () => {
+      const content = `
+        HASH_WITH_COMMENT="foo#bar" # real comment
+        SINGLE_HASH_WITH_COMMENT='foo#bar' # real comment
+        COLOR_WITH_COMMENT="#10b981" # emerald green accent
+        URL_WITH_COMMENT="https://apex.eth/docs#auth" # authentication endpoint
+        MULTI_HASH_WITH_COMMENT="a#b#c" # trailing comment with # extra hash
+        COMMENT_WITH_HASH_AND_QUOTES="data#123" # comment mentioning "item#2"
+      `;
+      const parsed = parseEnvFile(content);
+      assert.equal(parsed.HASH_WITH_COMMENT, 'foo#bar');
+      assert.equal(parsed.SINGLE_HASH_WITH_COMMENT, 'foo#bar');
+      assert.equal(parsed.COLOR_WITH_COMMENT, '#10b981');
+      assert.equal(parsed.URL_WITH_COMMENT, 'https://apex.eth/docs#auth');
+      assert.equal(parsed.MULTI_HASH_WITH_COMMENT, 'a#b#c');
+      assert.equal(parsed.COMMENT_WITH_HASH_AND_QUOTES, 'data#123');
+    });
+
+    it('should preserve internal whitespace in quoted values with trailing inline comments', () => {
+      const content = `
+        INTERNAL_SPACES="   value with leading and trailing spaces   " # comment
+        SINGLE_INTERNAL_SPACES='   value with single spaces   ' # comment
+      `;
+      const parsed = parseEnvFile(content);
+      assert.equal(parsed.INTERNAL_SPACES, '   value with leading and trailing spaces   ');
+      assert.equal(parsed.SINGLE_INTERNAL_SPACES, '   value with single spaces   ');
+    });
   });
 
   // ============================================================================
@@ -160,6 +230,19 @@ describe('Milestone 1: Canonical Setup, Config & Governance Verification', () =>
       assert.equal(config.initialCapitalUsd, 100.0);
       assert.equal(config.x402.port, 5000);
       assert.equal(config.mock.initialBalanceUsd, 150.0);
+    });
+
+    it('should load configuration successfully when .env contains quoted values with trailing comments', () => {
+      const envContent = `
+        NETWORK_MODE="mock" # local development mode
+        PORT_X402="4020" # paywall service
+        INITIAL_CAPITAL_USD="100.00" # seed capital
+      `;
+      const parsedEnv = parseEnvFile(envContent);
+      const config = loadConfig(parsedEnv);
+      assert.equal(config.networkMode, 'mock');
+      assert.equal(config.x402.port, 4020);
+      assert.equal(config.initialCapitalUsd, 100.0);
     });
   });
 

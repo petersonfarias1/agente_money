@@ -51,16 +51,45 @@ export function parseEnvFile(content: string): Record<string, string> {
     const key = rawKey.replace(/^export\s+/, '');
     let val = line.slice(eqIndex + 1).trim();
 
+    // 1. Strip inline comments outside of quotes
+    let inQuote: '"' | "'" | null = null;
+    let commentIndex = -1;
+
+    for (let i = 0; i < val.length; i++) {
+      const char = val[i];
+      if (inQuote) {
+        if (char === inQuote) {
+          // Check if quote is escaped by an odd number of preceding backslashes
+          let backslashCount = 0;
+          let j = i - 1;
+          while (j >= 0 && val[j] === '\\') {
+            backslashCount++;
+            j--;
+          }
+          if (backslashCount % 2 === 0) {
+            inQuote = null;
+          }
+        }
+      } else {
+        if (char === '"' || char === "'") {
+          inQuote = char;
+        } else if (char === '#') {
+          commentIndex = i;
+          break;
+        }
+      }
+    }
+
+    if (commentIndex !== -1) {
+      val = val.slice(0, commentIndex).trim();
+    }
+
+    // 2. Strip surrounding single or double quotes
     if (
       (val.startsWith('"') && val.endsWith('"')) ||
       (val.startsWith("'") && val.endsWith("'"))
     ) {
       val = val.slice(1, -1);
-    } else {
-      const commentIndex = val.indexOf('#');
-      if (commentIndex !== -1) {
-        val = val.slice(0, commentIndex).trim();
-      }
     }
 
     if (key) {
@@ -127,7 +156,7 @@ export function loadConfig(
   };
 
   // 2. Validate Network Mode
-  const rawNetworkMode = (env.NETWORK_MODE || 'mock').toLowerCase();
+  const rawNetworkMode = (env.NETWORK_MODE || 'mock').trim().toLowerCase();
   if (
     rawNetworkMode !== 'mock' &&
     rawNetworkMode !== 'testnet' &&
@@ -140,13 +169,13 @@ export function loadConfig(
   const networkMode: NetworkMode = rawNetworkMode as NetworkMode;
 
   // 3. System & Runtime Configuration
-  const nodeEnv = env.NODE_ENV || 'development';
-  const rawLogLevel = (env.LOG_LEVEL || 'info').toLowerCase();
+  const nodeEnv = (env.NODE_ENV || 'development').trim();
+  const rawLogLevel = (env.LOG_LEVEL || 'info').trim().toLowerCase();
   const validLogLevels: LogLevel[] = ['debug', 'info', 'warn', 'error'];
   const logLevel: LogLevel = validLogLevels.includes(rawLogLevel as LogLevel)
     ? (rawLogLevel as LogLevel)
     : 'info';
-  const databasePath = env.DATABASE_PATH || './data/agent.db';
+  const databasePath = (env.DATABASE_PATH || './data/agent.db').trim();
 
   // 4. Private Key & Wallet Validation
   let privateKey = env.PRIVATE_KEY || env.AGENT_PRIVATE_KEY || '';
@@ -189,8 +218,9 @@ export function loadConfig(
   }
 
   // Mother Clan Wallet validation
-  const motherWalletAddress =
-    env.MOTHER_WALLET_ADDRESS || '0x0000000000000000000000000000000000000000';
+  const motherWalletAddress = (
+    env.MOTHER_WALLET_ADDRESS || '0x0000000000000000000000000000000000000000'
+  ).trim();
   if (!isValidAddress(motherWalletAddress)) {
     throw new ConfigValidationError(
       `Invalid MOTHER_WALLET_ADDRESS format: '${motherWalletAddress}'. Must be a 20-byte hex address with 0x prefix.`
@@ -205,28 +235,35 @@ export function loadConfig(
   const isMock = networkMode === 'mock';
 
   if (networkMode === 'mock') {
-    baseRpcUrl = env.BASE_RPC_URL || 'http://localhost:8545';
-    polygonRpcUrl = env.POLYGON_RPC_URL || 'http://localhost:8545';
-    baseUsdcAddress =
-      env.BASE_USDC_ADDRESS || '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
-    polygonUsdcAddress =
-      env.POLYGON_USDC_ADDRESS || '0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582';
+    baseRpcUrl = (env.BASE_RPC_URL || 'http://localhost:8545').trim();
+    polygonRpcUrl = (env.POLYGON_RPC_URL || 'http://localhost:8545').trim();
+    baseUsdcAddress = (
+      env.BASE_USDC_ADDRESS || '0x036CbD53842c5426634e7929541eC2318f3dCF7e'
+    ).trim();
+    polygonUsdcAddress = (
+      env.POLYGON_USDC_ADDRESS || '0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582'
+    ).trim();
   } else if (networkMode === 'testnet') {
-    baseRpcUrl = env.BASE_RPC_URL || 'https://sepolia.base.org';
-    polygonRpcUrl =
-      env.POLYGON_RPC_URL || 'https://rpc-amoy.polygon.technology';
-    baseUsdcAddress =
-      env.BASE_USDC_ADDRESS || '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
-    polygonUsdcAddress =
-      env.POLYGON_USDC_ADDRESS || '0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582';
+    baseRpcUrl = (env.BASE_RPC_URL || 'https://sepolia.base.org').trim();
+    polygonRpcUrl = (
+      env.POLYGON_RPC_URL || 'https://rpc-amoy.polygon.technology'
+    ).trim();
+    baseUsdcAddress = (
+      env.BASE_USDC_ADDRESS || '0x036CbD53842c5426634e7929541eC2318f3dCF7e'
+    ).trim();
+    polygonUsdcAddress = (
+      env.POLYGON_USDC_ADDRESS || '0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582'
+    ).trim();
   } else {
     // mainnet
-    baseRpcUrl = env.BASE_RPC_URL || 'https://mainnet.base.org';
-    polygonRpcUrl = env.POLYGON_RPC_URL || 'https://polygon-rpc.com';
-    baseUsdcAddress =
-      env.BASE_USDC_ADDRESS || '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
-    polygonUsdcAddress =
-      env.POLYGON_USDC_ADDRESS || '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
+    baseRpcUrl = (env.BASE_RPC_URL || 'https://mainnet.base.org').trim();
+    polygonRpcUrl = (env.POLYGON_RPC_URL || 'https://polygon-rpc.com').trim();
+    baseUsdcAddress = (
+      env.BASE_USDC_ADDRESS || '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+    ).trim();
+    polygonUsdcAddress = (
+      env.POLYGON_USDC_ADDRESS || '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359'
+    ).trim();
   }
 
   if (!isValidAddress(baseUsdcAddress)) {
@@ -362,7 +399,7 @@ export function loadConfig(
     );
   }
 
-  const rawChain = (env.X402_SETTLEMENT_CHAIN || 'base').toLowerCase();
+  const rawChain = (env.X402_SETTLEMENT_CHAIN || 'base').trim().toLowerCase();
   const settlementChain: SupportedChain =
     rawChain === 'polygon' ? 'polygon' : 'base';
 
@@ -395,7 +432,7 @@ export function loadConfig(
   // 11. Mock & Simulation Controls
   let useMockApis =
     env.USE_MOCK_APIS !== undefined
-      ? env.USE_MOCK_APIS === 'true'
+      ? env.USE_MOCK_APIS.trim().toLowerCase() === 'true'
       : networkMode === 'mock';
 
   if (networkMode === 'mainnet' && useMockApis) {
@@ -407,7 +444,9 @@ export function loadConfig(
   const mockBalanceUsd = Number.parseFloat(
     env.MOCK_WALLET_BALANCE_USD || '75.00'
   );
-  const simulateErrors = env.MOCK_SIMULATE_ERRORS === 'true';
+  const simulateErrors =
+    env.MOCK_SIMULATE_ERRORS !== undefined &&
+    env.MOCK_SIMULATE_ERRORS.trim().toLowerCase() === 'true';
 
   // 12. Final AppConfig assembly
   const appConfig: AppConfig = {
@@ -434,10 +473,12 @@ export function loadConfig(
       maxBankrollCap: maxBankrollBetPercent,
     },
     polymarket: {
-      clobApiUrl: env.POLYMARKET_CLOB_API_URL || 'https://clob.polymarket.com',
-      apiKey: env.POLYMARKET_API_KEY,
-      apiSecret: env.POLYMARKET_API_SECRET,
-      apiPassphrase: env.POLYMARKET_API_PASSPHRASE,
+      clobApiUrl: (
+        env.POLYMARKET_CLOB_API_URL || 'https://clob.polymarket.com'
+      ).trim(),
+      apiKey: env.POLYMARKET_API_KEY?.trim(),
+      apiSecret: env.POLYMARKET_API_SECRET?.trim(),
+      apiPassphrase: env.POLYMARKET_API_PASSPHRASE?.trim(),
     },
     x402: {
       port: portX402,
@@ -445,7 +486,7 @@ export function loadConfig(
       settlementChain,
     },
     bounties: {
-      githubToken: env.GITHUB_TOKEN,
+      githubToken: env.GITHUB_TOKEN?.trim(),
       minRewardUsd: Number.isNaN(minBountyRewardUsd) ? 10.0 : minBountyRewardUsd,
     },
     evolution: {
