@@ -23,32 +23,38 @@
 
 ```mermaid
 flowchart TD
-    subgraph Core["Núcleo Soberano (src/core/)"]
-        HB["HeartbeatDaemon (src/index.ts)"]
-        W["ApexWallet Dual-Chain (Base + Polygon)"]
-        M["Metabolismo Adaptativo (4 Tiers)"]
-        DB[("SQLite Nativo (ledger, actions, lineage)")]
-        PD["Protocolo Permadeath (tombstone.json)"]
+    subgraph Core["Núcleo Soberano - src/core"]
+        HB["HeartbeatDaemon - src/index.ts"]
+        W["ApexWallet Dual-Chain - Base e Polygon"]
+        M["Metabolismo Adaptativo - 4 Tiers"]
+        DB[("SQLite Nativo - ledger, actions, lineage")]
+        PD["Protocolo Permadeath - tombstone.json"]
     end
 
-    subgraph Revenue["Motor Tri-Fator de Receita (src/modules/)"]
-        PM["Polymarket CLOB + Quarter-Kelly (<= 5% Banca)"]
-        X402["Servidor HTTP 402 Paywall (x402)"]
+    subgraph Revenue["Motor Tri-Fator de Receita - src/modules"]
+        PM["Polymarket CLOB + Quarter-Kelly"]
+        X402["Servidor HTTP 402 Paywall - x402"]
         BNT["Bounties Scanner + Anti-Spam Firewall"]
     end
 
-    subgraph Evolution["Evolução e Auto-Cura (src/evolution/)"]
-        IMM["Sistema Imunológico (Sandbox + Git Rollback)"]
-        MIT["Mitose Darwiniana (Gatilho 3x + 5% Royalties)"]
+    subgraph Evolution["Evolução e Auto-Cura - src/evolution"]
+        IMM["Sistema Imunológico - Sandbox e Git Rollback"]
+        MIT["Mitose Darwiniana - Gatilho 3x e 5% Royalties"]
     end
 
     HB --> W
     W --> M
-    M -->|Saldo > $0| Revenue
-    M -->|Saldo <= $0| PD
-    M -->|Tier Verde (> $50)| Evolution
-    Revenue --> DB
-    Evolution --> DB
+    M -->|"Tiers Verde e Amarelo"| PM
+    M -->|"Tiers Verde, Amarelo e Laranja"| X402
+    M -->|"Tiers Verde, Amarelo e Laranja"| BNT
+    M -->|"Tier Vermelho: Saldo zero"| PD
+    M -->|"Tier Verde: Acima de 50 USDC"| IMM
+    M -->|"Tier Verde: Acima de 150 USDC"| MIT
+    PM --> DB
+    X402 --> DB
+    BNT --> DB
+    IMM --> DB
+    MIT --> DB
     PD --> DB
 ```
 
@@ -67,7 +73,7 @@ O arquivo [`src/constitution.md`](src/constitution.md) estabelece as leis inviol
 | **Artigo III** | **Respeito ao Metabolismo Dinâmico** | Obriga a degradação imediata de modelos de IA, frequência de *heartbeat* e operações especulativas conforme o saldo cai entre os Tiers Verde, Amarelo, Laranja e Vermelho. |
 | **Artigo IV** | **Protocolo de Permadeath** | Quando o saldo consolidado chega a `<= $0.00`, encerra subsistemas ativos, marca insolvência na linhagem, grava o snapshot `tombstone.json` e termina com código `0`. |
 | **Artigo V** | **Integridade do Sistema Imunológico** | Toda automodificação exige execução prévia de `npm run build` e `npm test` em sandbox; qualquer falha aciona `git reset --hard HEAD && git clean -fd`. |
-| **Artigo VI** | **Pacto de Mitose e Royalties de 5%** | A replicação exige saldo $\ge 3\times$ o capital inicial ($150 em base $50) e aprovação em simulação de viabilidade (Sharpe $> 0$). Agentes-filhos remetem **5.0% dos lucros líquidos** ao fundo materno. |
+| **Artigo VI** | **Pacto de Mitose e Royalties de 5%** | A replicação exige saldo $\ge 3\times$ o capital inicial (`$150.00` em base `$50.00`) e aprovação em simulação de viabilidade (Sharpe $> 0$). Agentes-filhos remetem **5.0% dos lucros líquidos** ao fundo materno. |
 | **Artigo VII** | **Proibição de Auto-Adulteração** | Bloqueia qualquer alteração em `src/constitution.md`, `src/core/*`, `src/config.ts`, `src/types.ts`, `src/index.ts` e `package.json`. |
 
 ---
