@@ -53,10 +53,11 @@ export class MitosisThresholdError extends MitosisError {
   public readonly deficitUsd: number;
 
   constructor(currentBalanceUsd: number, requiredThresholdUsd: number) {
-    const deficitUsd = Math.max(
-      0,
-      Number((requiredThresholdUsd - currentBalanceUsd).toFixed(6))
-    );
+    const isBelow = currentBalanceUsd < requiredThresholdUsd;
+    const rawDeficit = requiredThresholdUsd - currentBalanceUsd;
+    const deficitUsd = isBelow
+      ? Math.max(0.000001, Number(rawDeficit.toFixed(6)))
+      : 0;
     super(
       `Replication blocked: Current balance ($${currentBalanceUsd.toFixed(2)}) is below the required capital threshold ($${requiredThresholdUsd.toFixed(2)}). Deficit: $${deficitUsd.toFixed(2)}.`
     );
@@ -270,9 +271,10 @@ export function evaluateMitosisThreshold(
 
   const thresholdRequiredUsd = Number((initialCapitalUsd * multiplier).toFixed(6));
   const isEligible = currentBalanceUsd >= thresholdRequiredUsd;
+  const rawDeficit = thresholdRequiredUsd - currentBalanceUsd;
   const deficitUsd = isEligible
     ? 0
-    : Number((thresholdRequiredUsd - currentBalanceUsd).toFixed(6));
+    : Math.max(0.000001, Number(rawDeficit.toFixed(6)));
   const surplusUsd = isEligible
     ? Number((currentBalanceUsd - thresholdRequiredUsd).toFixed(6))
     : 0;
@@ -396,8 +398,9 @@ export function runViabilitySimulation(
   const stdDev = Math.sqrt(variance);
 
   let sharpeRatio = 0;
-  if (stdDev > 0) {
-    sharpeRatio = Number((meanReturn / stdDev).toFixed(4));
+  if (stdDev >= 0.0001) {
+    const rawSharpe = meanReturn / stdDev;
+    sharpeRatio = Number(Math.min(10.0, Math.max(-10.0, rawSharpe)).toFixed(4));
   } else if (meanReturn > 0) {
     sharpeRatio = 10.0;
   } else {
@@ -513,7 +516,6 @@ export async function executeMitosis(
   const config = options?.config ?? getConfig();
   const wallet: ApexWallet = options?.wallet ?? getWallet();
   const database: DatabaseService = options?.database ?? getDatabase();
-  const chain: SupportedChain = options?.chain ?? 'base';
 
   // 1. Query Mother Balance
   const currentBalanceUsd = await wallet.getTotalBalanceUsd();
@@ -600,6 +602,23 @@ export async function executeMitosis(
     'CHILD_SUB_WALLET',
     `Child Clone Gen ${generation} Index ${childIndex}`
   );
+
+  // 6.5 Select Optimal Chain with Sufficient Liquidity for Seed Transfer
+  let chain: SupportedChain = options?.chain as SupportedChain;
+  if (!chain) {
+    const baseBalance = await wallet.getBaseUsdcBalance();
+    const polyBalance = await wallet.getPolygonUsdcBalance();
+
+    if (baseBalance >= seedCapitalUsd && polyBalance >= seedCapitalUsd) {
+      chain = baseBalance >= polyBalance ? 'base' : 'polygon';
+    } else if (baseBalance >= seedCapitalUsd) {
+      chain = 'base';
+    } else if (polyBalance >= seedCapitalUsd) {
+      chain = 'polygon';
+    } else {
+      chain = baseBalance >= polyBalance ? 'base' : 'polygon';
+    }
+  }
 
   // 7. Execute On-Chain / Mock Seed Transfer
   const txHash = await wallet.transferUsdc(chain, childWallet.address, seedCapitalUsd);
@@ -886,8 +905,8 @@ export async function remitRoyalty(
       timestamp: now,
     });
 
-    // Increment total_royalties_paid_usd in lineage
-    database.updateRoyaltiesPaid(childAddress, amountToRemit);
+    // Increment total_royalties_paid_usd in lineage with atomic upsert
+    database.updateRoyaltiesPaid(childAddress, amountToRemit, motherWalletAddress);
 
     // Audit action logging
     database.recordAction({

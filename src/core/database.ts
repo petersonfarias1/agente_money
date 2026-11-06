@@ -357,14 +357,23 @@ export class DatabaseService {
     };
   }
 
-  public updateRoyaltiesPaid(childAddress: string, additionalUsd: number): void {
+  public updateRoyaltiesPaid(
+    childAddress: string,
+    additionalUsd: number,
+    parentAddress: string = '0x0000000000000000000000000000000000000000'
+  ): void {
     this.assertOpen();
+    const now = Date.now();
     const stmt = this.db.prepare(`
-      UPDATE lineage
-      SET total_royalties_paid_usd = total_royalties_paid_usd + ?
-      WHERE child_address = ?;
+      INSERT INTO lineage (
+        child_address, parent_address, generation, birth_timestamp,
+        seed_capital_usd, total_royalties_paid_usd, status
+      )
+      VALUES (?, ?, 1, ?, 0.0, ?, 'ACTIVE')
+      ON CONFLICT(child_address) DO UPDATE SET
+        total_royalties_paid_usd = total_royalties_paid_usd + excluded.total_royalties_paid_usd;
     `);
-    stmt.run(additionalUsd, childAddress);
+    stmt.run(childAddress, parentAddress, now, additionalUsd);
   }
 
   public updateLineageStatus(childAddress: string, status: LineageStatus): void {

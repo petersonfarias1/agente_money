@@ -11,7 +11,7 @@
  * - Persistent audit logging in SQLite actions (IMMUNE_SYSTEM_VERIFIED / ROLLBACK)
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import path from 'node:path';
 import type { DatabaseService } from '../core/database.ts';
 import { getDatabase } from '../core/database.ts';
@@ -108,6 +108,19 @@ export interface ValidationResult {
   filesModified: string[];
 }
 
+/**
+ * Helper to parse command strings while preserving quoted arguments.
+ */
+function parseCommand(commandStr: string): { cmd: string; args: string[] } {
+  const tokens = commandStr.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g);
+  if (!tokens || tokens.length === 0) {
+    return { cmd: commandStr, args: [] };
+  }
+  const cmd = tokens[0].replace(/^["']|["']$/g, '');
+  const args = tokens.slice(1).map((arg) => arg.replace(/^["']|["']$/g, ''));
+  return { cmd, args };
+}
+
 // ==============================================================================
 // 3. ImmuneSystem Implementation
 // ==============================================================================
@@ -170,14 +183,26 @@ export class ImmuneSystem {
       const timeoutLimit = options?.timeout ?? this.timeoutMs;
       const timer = setTimeout(() => {
         timedOut = true;
-        child.kill('SIGTERM');
-        setTimeout(() => {
+        if (process.platform === 'win32' && child.pid) {
           try {
-            child.kill('SIGKILL');
+            execSync(`taskkill /F /T /PID ${child.pid}`, { stdio: 'ignore' });
           } catch {
-            // ignore
+            try {
+              child.kill('SIGKILL');
+            } catch {
+              // ignore
+            }
           }
-        }, 2000).unref();
+        } else {
+          child.kill('SIGTERM');
+          setTimeout(() => {
+            try {
+              child.kill('SIGKILL');
+            } catch {
+              // ignore
+            }
+          }, 2000).unref();
+        }
       }, timeoutLimit);
 
       child.stdout.on('data', (d) => {
@@ -213,6 +238,7 @@ export class ImmuneSystem {
 
   /**
    * Discovers all uncommitted, staged, or untracked files via git status --porcelain.
+   * Strictly filters for valid 2-character git status flags to prevent test mock strings from interfering.
    */
   public async getModifiedFiles(): Promise<string[]> {
     try {
@@ -222,12 +248,17 @@ export class ImmuneSystem {
       if (res.exitCode !== 0) {
         throw new Error(`git status failed (exit ${res.exitCode}): ${res.stderr}`);
       }
-      const lines = res.stdout.split('\n');
+      const lines = res.stdout.split(/\r?\n/);
       const files: string[] = [];
+      const porcelainRegex = /^([ MADRCU?!]{2})\s+(.+)$/;
+
       for (const rawLine of lines) {
-        const line = rawLine.trim();
+        const line = rawLine.trimEnd();
         if (!line) continue;
-        let filePath = line.substring(2).trim();
+        const match = line.match(porcelainRegex);
+        if (!match) continue;
+
+        let filePath = match[2].trim();
         if (filePath.includes(' -> ')) {
           filePath = filePath.split(' -> ')[1].trim();
         }
@@ -243,39 +274,71 @@ export class ImmuneSystem {
   /**
    * Verifies that modified files are strictly within Constitutional boundaries.
    * Only src/modules/, prompts/, strategies/ are permitted.
-   * Everything else, including constitution, types, core/*, and immune_system.ts, is rejected.
+   * Uses canonical path resolution to prevent directory traversal escapes.
    */
   public verifyConstitutionalScope(files: string[]): ScopeCheckResult {
     const violatedFiles: string[] = [];
     const allowedFiles: string[] = [];
 
     for (const rawFile of files) {
-      const file = rawFile.replace(/\\/g, '/').replace(/^\.\//, '');
-
-      // Check against protected paths first
-      const isProtected = this.protectedPaths.some((prot) => {
-        const normalizedProt = prot.replace(/\\/g, '/').replace(/^\.\//, '');
-        return (
-          file === normalizedProt ||
-          file.startsWith(normalizedProt.endsWith('/') ? normalizedProt : normalizedProt + '/')
-        );
-      });
-
-      if (isProtected) {
-        violatedFiles.push(file);
+      if (typeof rawFile !== 'string' || rawFile.includes('\0')) {
+        violatedFiles.push(rawFile);
         continue;
       }
 
-      // Check if file starts with an allowed directory
+      let decoded = rawFile;
+      if (decoded.includes('%')) {
+        try {
+          decoded = decodeURIComponent(decoded);
+        } catch {
+          violatedFiles.push(rawFile);
+          continue;
+        }
+      }
+
+      const normalizedSlashes = decoded.replace(/\\/g, '/');
+      const resolved = path.resolve(this.projectRoot, normalizedSlashes);
+      const relPath = path.relative(this.projectRoot, resolved).replace(/\\/g, '/');
+
+      // 1. Reject paths that escape the repository root or are absolute/drive letters
+      if (
+        relPath.startsWith('../') ||
+        relPath === '..' ||
+        path.isAbsolute(relPath) ||
+        /^[a-zA-Z]:/.test(relPath)
+      ) {
+        violatedFiles.push(rawFile);
+        continue;
+      }
+
+      const canonRel = relPath.replace(/^\.\//, '');
+
+      // 2. Check against protected paths (case-insensitive for Windows resilience)
+      const isProtected = this.protectedPaths.some((prot) => {
+        const normProt = path.normalize(prot).replace(/\\/g, '/').replace(/^\.\//, '');
+        const canonLower = canonRel.toLowerCase();
+        const protLower = normProt.toLowerCase();
+        const protDirLower = protLower.endsWith('/') ? protLower : protLower + '/';
+
+        return canonLower === protLower || canonLower.startsWith(protDirLower);
+      });
+
+      if (isProtected) {
+        violatedFiles.push(rawFile);
+        continue;
+      }
+
+      // 3. Check if file resides strictly inside an allowed directory
       const isAllowed = this.allowedDirectories.some((dir) => {
-        const normalizedDir = dir.replace(/\\/g, '/').replace(/^\.\//, '');
-        return file.startsWith(normalizedDir);
+        const normDir = path.normalize(dir).replace(/\\/g, '/').replace(/^\.\//, '');
+        const dirPrefixLower = (normDir.endsWith('/') ? normDir : normDir + '/').toLowerCase();
+        return canonRel.toLowerCase().startsWith(dirPrefixLower);
       });
 
       if (!isAllowed) {
-        violatedFiles.push(file);
+        violatedFiles.push(rawFile);
       } else {
-        allowedFiles.push(file);
+        allowedFiles.push(rawFile);
       }
     }
 
@@ -292,7 +355,7 @@ export class ImmuneSystem {
   public async getDiff(): Promise<string> {
     try {
       const res = await this.execRunner('git', ['diff', 'HEAD'], { cwd: this.projectRoot });
-      return res.stdout;
+      return res.stdout.replace(/\r\n/g, '\n');
     } catch {
       return '';
     }
@@ -317,15 +380,14 @@ export class ImmuneSystem {
   public async runBuildCheck(): Promise<ImmuneCheckResult> {
     const start = Date.now();
     try {
-      const parts = this.buildCommand.split(' ');
-      const cmd = parts[0];
-      const args = parts.slice(1);
+      const { cmd, args } = parseCommand(this.buildCommand);
       const res = await this.execRunner(cmd, args, { cwd: this.projectRoot });
       const durationMs = Date.now() - start;
       const passed = res.exitCode === 0;
+      const output = (res.stdout + '\n' + res.stderr).replace(/\r\n/g, '\n').trim();
       return {
         passed,
-        output: (res.stdout + '\n' + res.stderr).trim(),
+        output,
         exitCode: res.exitCode,
         durationMs,
         error: passed ? undefined : `Build syntax check failed with exit code ${res.exitCode}`,
@@ -348,9 +410,7 @@ export class ImmuneSystem {
   public async runImmuneCheck(): Promise<ImmuneCheckResult> {
     const start = Date.now();
     try {
-      const parts = this.testCommand.split(' ');
-      const cmd = parts[0];
-      const args = parts.slice(1);
+      const { cmd, args } = parseCommand(this.testCommand);
       const res = await this.execRunner(cmd, args, {
         cwd: this.projectRoot,
         env: {
@@ -360,9 +420,10 @@ export class ImmuneSystem {
       });
       const durationMs = Date.now() - start;
       const passed = res.exitCode === 0;
+      const output = (res.stdout + '\n' + res.stderr).replace(/\r\n/g, '\n').trim();
       return {
         passed,
-        output: (res.stdout + '\n' + res.stderr).trim(),
+        output,
         exitCode: res.exitCode,
         durationMs,
         error: passed ? undefined : `Automated test check failed with exit code ${res.exitCode}`,
@@ -391,9 +452,10 @@ export class ImmuneSystem {
   /**
    * Main entry point: validates an in-progress or proposed modification against the 4-tier gate:
    * 1. Metabolic Tier Gate (Tier Verde balance > $50.00 USD)
-   * 2. Constitutional Scope Gate (whitelist: src/modules/, prompts/, strategies/)
-   * 3. Pre-Deployment Syntax / Build Sandbox
-   * 4. Pre-Deployment Test Validation Sandbox (100% Passing Invariant)
+   * 2. Discover Modified Files (Union of dirty working tree and proposed target files)
+   * 3. Constitutional Scope Gate (whitelist: src/modules/, prompts/, strategies/)
+   * 4. Pre-Deployment Syntax / Build Sandbox
+   * 5. Pre-Deployment Test Validation Sandbox (100% Passing Invariant)
    * 
    * On any failure: executes instant Git rollback and logs IMMUNE_SYSTEM_ROLLBACK in actions.
    * On pass: authorizes modification and logs IMMUNE_SYSTEM_VERIFIED in actions.
@@ -426,11 +488,10 @@ export class ImmuneSystem {
       throw new ImmuneCheckError(reason);
     }
 
-    // 2. Discover Modified Files
-    const modifiedFiles =
-      proposal?.targetFiles && proposal.targetFiles.length > 0
-        ? proposal.targetFiles
-        : await this.getModifiedFiles();
+    // 2. Discover Modified Files (Always inspect actual dirty files in git working tree)
+    const actualDirtyFiles = await this.getModifiedFiles();
+    const declaredFiles = proposal?.targetFiles ?? [];
+    const modifiedFiles = Array.from(new Set([...actualDirtyFiles, ...declaredFiles]));
 
     // 3. Constitutional Scope Gate (Article V & VII)
     const scope = this.verifyConstitutionalScope(modifiedFiles);
