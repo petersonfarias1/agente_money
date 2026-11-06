@@ -90,6 +90,7 @@ export class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_ledger_timestamp ON ledger(timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_ledger_entry_type ON ledger(entry_type);
       CREATE INDEX IF NOT EXISTS idx_ledger_chain ON ledger(chain);
+      CREATE INDEX IF NOT EXISTS idx_ledger_tx_hash ON ledger(tx_hash);
     `);
 
     // 2. Actions Table
@@ -265,6 +266,12 @@ export class DatabaseService {
 
   public getLedgerSnapshot(limit = 100): LedgerEntry[] {
     return this.getLedgerEntries(limit, 0);
+  }
+
+  public hasTxHash(txHash: string): boolean {
+    this.assertOpen();
+    const stmt = this.db.prepare('SELECT 1 FROM ledger WHERE tx_hash = ? LIMIT 1;');
+    return stmt.get(txHash) !== undefined;
   }
 
   // ============================================================================

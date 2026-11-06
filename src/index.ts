@@ -289,3 +289,13 @@ if (isMainModule) {
   const daemon = new HeartbeatDaemon({ autoStart: true });
   registerSignalHandlers(daemon);
 }
+
+// ==============================================================================
+// 8. Re-Export Triple Revenue Engine Modules
+// ==============================================================================
+export * from './modules/polymarket/kelly.ts';
+export * from './modules/polymarket/scanner.ts';
+export * from './modules/polymarket/order.ts';
+export * from './modules/micropayments/server.ts';
+export * from './modules/bounties/scanner.ts';
+
