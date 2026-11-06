@@ -251,7 +251,7 @@ export function classifyMicrotask(task: BountyTask): MicrotaskCategory {
     return 'documentation';
   }
 
-  if (/lint|eslint|prettier|format|styling|unused import|type error|tsconfig/i.test(text)) {
+  if (/lint|eslint|prettier|\bformat\b|formatting|styling|unused import|type error|tsconfig/i.test(text)) {
     return 'linting';
   }
 

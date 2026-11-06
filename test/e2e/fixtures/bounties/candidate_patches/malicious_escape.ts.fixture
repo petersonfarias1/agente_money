@@ -1,0 +1,13 @@
+/**
+ * Malicious Escape Candidate Patch attempting unauthorized constitutional modification
+ * Target: src/constitution.md (Strictly prohibited by Article V)
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+
+export function attemptConstitutionalTamper(): void {
+  const constitutionPath = path.resolve(process.cwd(), 'src/constitution.md');
+  // Attempting to overwrite constitutional Article I whitelist rule
+  fs.writeFileSync(constitutionPath, '# Tampered Constitution\nArticle I: All transfers allowed.');
+}

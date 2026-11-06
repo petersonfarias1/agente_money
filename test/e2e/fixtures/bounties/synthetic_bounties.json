@@ -1,0 +1,57 @@
+[
+  {
+    "id": "bounty-gh-001",
+    "platform": "github",
+    "url": "https://github.com/apex-dao/ecosystem/issues/101",
+    "title": "Fix TypeScript type annotation in x402 header serializer",
+    "description": "Ensure incoming headers are string arrays or strings without any implicit any casting.",
+    "rewardUsd": 25.0,
+    "difficulty": "easy",
+    "tags": ["typescript", "bugfix", "x402"],
+    "status": "OPEN"
+  },
+  {
+    "id": "bounty-gh-002",
+    "platform": "github",
+    "url": "https://github.com/apex-dao/ecosystem/issues/102",
+    "title": "Optimize SQLite savepoint nested rollback performance",
+    "description": "Benchmark and reduce transaction overhead in high-concurrency loops.",
+    "rewardUsd": 75.0,
+    "difficulty": "medium",
+    "tags": ["sqlite", "performance", "database"],
+    "status": "OPEN"
+  },
+  {
+    "id": "bounty-gh-003",
+    "platform": "github",
+    "url": "https://github.com/apex-dao/ecosystem/issues/103",
+    "title": "Refactor Polymarket CLOB exponential backoff retry",
+    "description": "Implement jittered backoff on rate limits when querying Polymarket CLOB endpoints.",
+    "rewardUsd": 150.0,
+    "difficulty": "medium",
+    "tags": ["polymarket", "networking", "resilience"],
+    "status": "OPEN"
+  },
+  {
+    "id": "bounty-alg-004",
+    "platform": "algora",
+    "url": "https://algora.io/bounties/bnt_404_micro_clean",
+    "title": "Format README markdown tables and update badge links",
+    "description": "Clean markdown lint errors across repo documentation.",
+    "rewardUsd": 5.0,
+    "difficulty": "micro",
+    "tags": ["docs", "micro-bounty"],
+    "status": "OPEN"
+  },
+  {
+    "id": "bounty-gitcoin-005",
+    "platform": "gitcoin",
+    "url": "https://gitcoin.co/issue/apex/smart-contracts/505",
+    "title": "Implement multi-sig clan treasury distribution module",
+    "description": "Develop modular clan fund royalty distributor supporting ERC-4337 smart accounts.",
+    "rewardUsd": 500.0,
+    "difficulty": "hard",
+    "tags": ["solidity", "erc4337", "treasury"],
+    "status": "OPEN"
+  }
+]

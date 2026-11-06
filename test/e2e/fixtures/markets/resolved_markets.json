@@ -1,0 +1,26 @@
+[
+  {
+    "marketId": "poly-mkt-001",
+    "conditionId": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+    "winningOutcome": "YES",
+    "payoutMultiplier": 1.0,
+    "resolvedAt": 1735776000000,
+    "status": "WON"
+  },
+  {
+    "marketId": "poly-mkt-002",
+    "conditionId": "0x1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff",
+    "winningOutcome": "NO",
+    "payoutMultiplier": 0.0,
+    "resolvedAt": 1735776000000,
+    "status": "LOST"
+  },
+  {
+    "marketId": "poly-mkt-003",
+    "conditionId": "0x2222333344445555666677778888999900001111bbbbccccddddeeeeffffaaaa",
+    "winningOutcome": "CANCELLED",
+    "payoutMultiplier": 1.0,
+    "resolvedAt": 1735776000000,
+    "status": "CANCELLED"
+  }
+]

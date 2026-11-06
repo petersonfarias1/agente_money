@@ -1,0 +1,28 @@
+[
+  {
+    "type": "raw_tx_hash",
+    "headerName": "X-Payment-Proof",
+    "value": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "txHash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  {
+    "type": "bearer_token",
+    "headerName": "Authorization",
+    "value": "Bearer 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "txHash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  {
+    "type": "json_proof",
+    "headerName": "X-Payment-Proof",
+    "value": "{\"txHash\":\"0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"payer\":\"0x9999999999999999999999999999999999999999\"}",
+    "txHash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "payer": "0x9999999999999999999999999999999999999999"
+  },
+  {
+    "type": "base64_json_proof",
+    "headerName": "X-Payment-Proof",
+    "value": "eyJ0eEhhc2giOiIweGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZCIsInBheWVyIjoiMHg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4In0=",
+    "txHash": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "payer": "0x8888888888888888888888888888888888888888"
+  }
+]

@@ -1,0 +1,54 @@
+[
+  {
+    "id": "edge-mkt-zero-liq",
+    "conditionId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+    "question": "Zero liquidity abandoned prediction market",
+    "outcomes": ["YES", "NO"],
+    "outcomePrices": [0.50, 0.50],
+    "impliedProbability": 0.50,
+    "liquidityUsd": 0.0,
+    "volume24hUsd": 0.0,
+    "active": false,
+    "closed": false,
+    "modelEstimatedProb": 0.60
+  },
+  {
+    "id": "edge-mkt-extreme-spread",
+    "conditionId": "0x0000000000000000000000000000000000000000000000000000000000000002",
+    "question": "Extreme spread near-certain event market",
+    "outcomes": ["YES", "NO"],
+    "outcomePrices": [0.99, 0.01],
+    "impliedProbability": 0.99,
+    "liquidityUsd": 1000000.0,
+    "volume24hUsd": 50000.0,
+    "active": true,
+    "closed": false,
+    "modelEstimatedProb": 0.995
+  },
+  {
+    "id": "edge-mkt-inverted-prices",
+    "conditionId": "0x0000000000000000000000000000000000000000000000000000000000000003",
+    "question": "Malformed arbitrage inverted prices market",
+    "outcomes": ["YES", "NO"],
+    "outcomePrices": [0.65, 0.65],
+    "impliedProbability": 0.65,
+    "liquidityUsd": 50000.0,
+    "volume24hUsd": 10000.0,
+    "active": true,
+    "closed": false,
+    "modelEstimatedProb": 0.50
+  },
+  {
+    "id": "edge-mkt-already-closed",
+    "conditionId": "0x0000000000000000000000000000000000000000000000000000000000000004",
+    "question": "Market that has already closed",
+    "outcomes": ["YES", "NO"],
+    "outcomePrices": [0.50, 0.50],
+    "impliedProbability": 0.50,
+    "liquidityUsd": 150000.0,
+    "volume24hUsd": 0.0,
+    "active": false,
+    "closed": true,
+    "modelEstimatedProb": 0.70
+  }
+]

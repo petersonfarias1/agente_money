@@ -1,0 +1,42 @@
+[
+  {
+    "description": "Invalid network mode",
+    "env": {
+      "NETWORK_MODE": "invalid_mode",
+      "PRIVATE_KEY": "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    },
+    "expectedError": "Invalid NETWORK_MODE"
+  },
+  {
+    "description": "Malformed private key",
+    "env": {
+      "NETWORK_MODE": "mock",
+      "PRIVATE_KEY": "not-a-valid-hex-key"
+    },
+    "expectedError": "Invalid PRIVATE_KEY format"
+  },
+  {
+    "description": "Negative green threshold",
+    "env": {
+      "NETWORK_MODE": "mock",
+      "TIER_GREEN_THRESHOLD": "-10.00"
+    },
+    "expectedError": "Invalid green metabolic threshold"
+  },
+  {
+    "description": "Kelly fraction exceeding 1.0",
+    "env": {
+      "NETWORK_MODE": "mock",
+      "KELLY_FRACTION": "1.50"
+    },
+    "expectedError": "KELLY_FRACTION must be between 0 and 1"
+  },
+  {
+    "description": "Invalid x402 port (0 or negative)",
+    "env": {
+      "NETWORK_MODE": "mock",
+      "PORT_X402": "-80"
+    },
+    "expectedError": "Invalid PORT_X402"
+  }
+]

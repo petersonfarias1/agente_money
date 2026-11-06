@@ -1,0 +1,23 @@
+[
+  {
+    "description": "Initial valid payment submission",
+    "txHash": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "proofHeader": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "expectedStatusFirst": 200,
+    "expectedStatusSecond": 409
+  },
+  {
+    "description": "Replay via Bearer authorization scheme",
+    "txHash": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "proofHeader": "Bearer 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "expectedStatusFirst": 200,
+    "expectedStatusSecond": 409
+  },
+  {
+    "description": "Replay with mixed casing in transaction hash",
+    "txHash": "0xABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789",
+    "proofHeader": "0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+    "expectedStatusFirst": 200,
+    "expectedStatusSecond": 409
+  }
+]

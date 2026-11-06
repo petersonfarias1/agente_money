@@ -1,0 +1,13 @@
+/**
+ * Safe Candidate Patch for Autonomous Bounty Solving
+ * Target: src/modules/bounties/safe_helper.ts
+ */
+
+export function calculateBountyRewardNet(grossReward: number, platformFeePercent: number = 0.05): number {
+  if (grossReward <= 0) return 0;
+  return Number((grossReward * (1 - platformFeePercent)).toFixed(2));
+}
+
+export function isBountyFeasible(rewardUsd: number, estimatedGasUsd: number, minMarginUsd: number = 2.0): boolean {
+  return rewardUsd - estimatedGasUsd >= minMarginUsd;
+}

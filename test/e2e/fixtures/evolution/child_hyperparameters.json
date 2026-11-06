@@ -1,0 +1,63 @@
+{
+  "validProfiles": [
+    {
+      "name": "balanced_default",
+      "kellyFraction": 0.25,
+      "maxBankrollCap": 0.05,
+      "heartbeatGreenMs": 60000,
+      "heartbeatYellowMs": 300000,
+      "minBountyRewardUsd": 10.0,
+      "x402PriceUsdc": 0.05,
+      "polymarketMinEvEdge": 0.02,
+      "strategyFocus": "BALANCED"
+    },
+    {
+      "name": "conservative_x402",
+      "kellyFraction": 0.15,
+      "maxBankrollCap": 0.03,
+      "heartbeatGreenMs": 45000,
+      "heartbeatYellowMs": 240000,
+      "minBountyRewardUsd": 15.0,
+      "x402PriceUsdc": 0.10,
+      "polymarketMinEvEdge": 0.03,
+      "strategyFocus": "X402_FOCUSED"
+    },
+    {
+      "name": "aggressive_polymarket",
+      "kellyFraction": 0.25,
+      "maxBankrollCap": 0.05,
+      "heartbeatGreenMs": 30000,
+      "heartbeatYellowMs": 180000,
+      "minBountyRewardUsd": 20.0,
+      "x402PriceUsdc": 0.02,
+      "polymarketMinEvEdge": 0.01,
+      "strategyFocus": "POLYMARKET_FOCUSED"
+    }
+  ],
+  "invalidProfiles": [
+    {
+      "name": "illegal_kelly_over_ceiling",
+      "kellyFraction": 0.35,
+      "maxBankrollCap": 0.05,
+      "heartbeatGreenMs": 60000,
+      "heartbeatYellowMs": 300000,
+      "minBountyRewardUsd": 10.0,
+      "x402PriceUsdc": 0.05,
+      "polymarketMinEvEdge": 0.02,
+      "strategyFocus": "BALANCED",
+      "expectedViolation": "Kelly fraction 0.35 exceeds constitutional ceiling 0.25"
+    },
+    {
+      "name": "illegal_bankroll_cap_over_5_percent",
+      "kellyFraction": 0.25,
+      "maxBankrollCap": 0.10,
+      "heartbeatGreenMs": 60000,
+      "heartbeatYellowMs": 300000,
+      "minBountyRewardUsd": 10.0,
+      "x402PriceUsdc": 0.05,
+      "polymarketMinEvEdge": 0.02,
+      "strategyFocus": "BALANCED",
+      "expectedViolation": "Bankroll cap 0.10 exceeds constitutional ceiling 0.05"
+    }
+  ]
+}
