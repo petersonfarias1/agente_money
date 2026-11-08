@@ -104,3 +104,81 @@ O método `verifyConstitutionalScope(files)` normaliza cada caminho com `path.re
    $$\text{TotalRoyaltiesDue} = 0.05 \times \max(0,\; \text{LucroLíquidoAcumulado})$$
    $$\text{PendingRoyalty} = \max(0,\; \text{TotalRoyaltiesDue} - \text{TotalRoyaltiesPaid})$$
    - A remessa só é executada quando $\text{PendingRoyalty} \ge \$0.50$ e o saldo pós-remessa permanece $\ge \$15.00$ (colchão de solvência).
+
+---
+
+## 5. Mission Control — Observabilidade Somente Leitura
+
+O **Mission Control** ([`src/modules/dashboard/`](../src/modules/dashboard/)) é um processo independente do daemon. Ele observa o estado persistido do agente e nunca participa do ciclo de vida: não cria instâncias do daemon, não agenda heartbeats e não abre o SQLite para escrita. A decisão arquitetural está registrada em `.specs/STATE.md` (AD-001).
+
+```mermaid
+flowchart LR
+    Agent["HeartbeatDaemon"] -->|"ledger, actions, positions, lineage"| DB[("SQLite data/agent.db")]
+    Agent -->|"Permadeath"| TB["tombstone.json"]
+    DB -->|"openReadOnly()"| SN["buildSnapshot()"]
+    TB -->|"readTombstone()"| SN
+    SN -->|"GET /api/snapshot"| SRV["DashboardServer"]
+    SN -->|"SSE a cada 2s"| SRV
+    SRV -->|"assets e API"| SPA["SPA (HTML/CSS/JS)"]
+```
+
+### 5.1. Fronteira de processo e leitura
+
+- **Entrada**: [`main.ts`](../src/modules/dashboard/main.ts) lê `DASHBOARD_HOST` (padrão `127.0.0.1`), `DASHBOARD_PORT` (padrão `7070`), `DASHBOARD_TOKEN`, `DATABASE_PATH` (padrão `./data/agent.db`) e `TOMBSTONE_PATH` (padrão `tombstone.json`).
+- **Guardas de inicialização**: porta fora de `0–65535` encerra com código `1`; host fora de `127.0.0.1`/`localhost`/`::1` sem `DASHBOARD_TOKEN` encerra com código `1`.
+- **Leitura estrita**: toda consulta passa por `openReadOnly(dbPath)`. O teste `C39` tenta criar uma tabela pela conexão e prova que o hash do arquivo permanece idêntico.
+- **Independência do daemon**: com o daemon parado, o painel continua respondendo a partir do último estado persistido e recalcula o liveness (`ALIVE`, `STALE`, `DEAD` ou `UNKNOWN`) pelo tempo decorrido desde o último `TICK_EVALUATED`.
+
+### 5.2. Pipeline do snapshot (`snapshot.ts`)
+
+`buildSnapshot(state, options)` incrementa `state.seq` e monta, em uma única leitura, o objeto consumido pela SPA:
+
+| Campo | Origem / regra |
+| :--- | :--- |
+| `generatedAt`, `seq` | Relógio da chamada e contador monotônico usado pelo SSE (`id`). |
+| `networkMode`, `agent` | Configuração resolvida; `agent` prefere os dados do tombstone, quando presente e válido. |
+| `liveness` | Derivado do último `TICK_EVALUATED` e do intervalo do tier (ver 5.3). |
+| `tier` | `evaluateTier(lastBalanceUsd, thresholds, intervals)`; `null` quando não há saldo registrado. |
+| `balance` | `balance_usd` da ação mais recente; `source: 'last-action'` ou `'none'`. |
+| `kpi` | Contagens de ciclos (`TICK_EVALUATED`), ações, componentes distintos e alertas críticos. |
+| `revenue` | Totais de receita/despesa, queima de 7 dias, runway, agrupamento por `entry_type` e série de saldo. |
+| `activity` | Últimas 10 ações, contagem por componente e transições de tier. |
+| `alerts` | Alertas derivados de ações recentes, com severidade `info`, `warning` ou `critical`. |
+| `positions`, `lineage` | Resumo e itens da Polymarket; linhagem do clã e royalties pagos. |
+| `x402`, `degraded` | Probe do servidor x402 e motivos de degradação (ex.: `degraded.x402 = timeout`). |
+| `config` | Configuração sanitizada; nomes sensíveis são substituídos por `***`. |
+| `tombstone` | `{ present, invalid?, path, reason, deathTimestamp, ... }` lido do disco. |
+
+Limites de leitura por snapshot: 200 ações, 5.000 lançamentos de ledger, 500 posições, linhagem completa e série de saldo reduzida a no máximo **240 pontos** por `capSeries()`.
+
+### 5.3. Derivação de liveness (`deriveLiveness`)
+
+| Estado | Condição |
+| :--- | :--- |
+| `UNKNOWN` | Nenhum `TICK_EVALUATED` registrado e a última ação não é `PERMADEATH_EXECUTED`. |
+| `DEAD` | Última ação é `PERMADEATH_EXECUTED` ou o último tick tem mais de 15 minutos. |
+| `STALE` | Idade do último tick maior que `2 × heartbeatIntervalMs` do tier atual. |
+| `ALIVE` | Idade do último tick dentro de `2 × heartbeatIntervalMs`. |
+
+### 5.4. Superfície HTTP e SSE (`server.ts`)
+
+- **Somente GET**: qualquer outro método responde `405 MethodNotAllowed` antes do roteamento.
+- **Autenticação opcional**: com `DASHBOARD_TOKEN`, aceita `Authorization: Bearer <token>` ou `?token=<token>`; caso contrário responde `401 Unauthorized`.
+- **Rotas**: `/`, `/assets/*`, `/api/stream`, `/api/snapshot`, `/api/actions`, `/api/ledger`, `/api/positions`, `/api/lineage`, `/api/config`, `/api/export` e `/api/health`.
+- **Validação de parâmetros**: `limit` entre 1 e 500, `before` inteiro positivo, `entryType` restrito aos tipos do ledger, `chain` restrita a `base`/`polygon`, `status` restrito a `OPEN`/`WON`/`LOST`/`CANCELLED`, `table` restrita à whitelist de exportação e `format` a `csv`/`json`. Violações respondem `400 InvalidParameter`.
+- **SSE**: envia `id: <seq>`, `event: snapshot` e o JSON do snapshot a cada 2s; `: ping` a cada 15s. O cabeçalho `Last-Event-ID` (ou `?lastEventId=`) retoma a sequência sem regredir o contador.
+- **Exportação**: até 10.000 linhas por tabela, com `Content-Disposition` de anexo; CSV em UTF-8 com BOM e linhas CRLF.
+- **Cabeçalhos**: `Content-Security-Policy: default-src 'self'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` e `Cache-Control: no-store` em todas as respostas.
+- **Assets**: servidos de `public/` com `path.basename()` como contenção contra path traversal e `Content-Type` explícito (`text/css`, `text/javascript`, `font/woff2`, `font/woff`, `image/svg+xml`).
+
+### 5.5. SPA e design system
+
+- **Sem build step**: `index.html`, `styles.css` e módulos ES (`app.js`, `ui_core.js`, `theme.js`) são servidos diretamente. `ui_core.js` concentra funções puras (formatação pt-BR, parsing de SSE, `overviewModel`, `detailView`, `listState`, `downsample`, `reconnectDelay`) testadas fora do navegador.
+- **Tema**: o padrão é escuro (tinta grafite, texto osso, sinal âmbar); o tema claro é uma variante de tokens em `[data-theme="light"]`, acionada manualmente no topo. `theme.js` roda no `<head>` antes da folha de estilo para aplicar a preferência salva em `localStorage['apex-theme']` sem flash; a CSP impede a solução inline.
+- **Tipografia e assets**: IBM Plex Sans variável (400–700) e IBM Plex Mono (400/500/600) auto-hospedadas em `public/` (`plex-*.woff2`), com a licença OFL em `plex-LICENSE.txt`. Nenhuma fonte ou script vem de origem externa.
+- **Composição**: topbar fixa com conexão, liveness, tier, saldo e alternância de tema; sidenav fixa com as seis telas; board de KPIs com divisórias de 1px; painéis planos; tabelas densas; medidor de tier em quatro níveis; alertas com marcadores de severidade.
+- **Gráficos**: SVG inline gerado em `app.js` a partir de `revenue.series`; a área em gradiente só é desenhada para séries não planas, com linha e marcador no último ponto. O `viewBox` acompanha a largura medida do painel e é recalculado em redimensionamentos.
+- **Estado no cliente**: `app.js` mantém o último snapshot recebido, aplica cada frame SSE (`applySnapshot`) e mantém a reconexão com backoff (`2s → 4s → 8s → 16s → 30s`).
+- **Cobertura**: `test/unit/dashboard_assets.test.ts` (inventário e ausência de origem externa), `dashboard_server.test.ts` (HTTP/SSE, autenticação, exportação e fronteira read-only), `dashboard_snapshot.test.ts` (derivações e snapshot) e `dashboard_ui_core.test.ts` (helpers puros).
+
+Instruções de execução, variáveis de ambiente e detalhes de cada tela estão na [seção 10 do README](../README.md#10-mission-control-dashboard).
