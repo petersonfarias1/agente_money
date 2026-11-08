@@ -9,9 +9,9 @@
 ## Handoff
 
 **Feature**: mission-control
-**Where**: C52 - as 52 provas estão verdes (`proofs=52 failures=0`), o build de sintaxe passa e o painel foi exercitado contra `data/agent.db` com o SHA-256 inalterado
-**In progress**: nada; builder encerrado, aguardando o Verifier independente
-**Next step**: despachar um Verifier novo sobre a base da feature até `HEAD`, com todos os checks, e gravar `verification.md`
+**Where**: C52 - verificação independente PASS, 52/52 checks com evidência localizada, profile `light`, gate `validate_verification.py` exit 0
+**In progress**: nada; feature e verificação encerradas
+**Next step**: operar com `npm run dashboard` (127.0.0.1:7070) enquanto `npm start` roda o agente
 **Blockers**: none
-**Uncommitted**: alterations pré-existentes em `.gitignore` e nos scripts de `package.json` (`setup:testnet`, `wallet:status`), não tocadas por esta feature
+**Uncommitted**: alterações pré-existentes em `.gitignore` e nos scripts de `package.json` (`setup:testnet`, `wallet:status`), não tocadas por esta feature
 **Branch**: master
