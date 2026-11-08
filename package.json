@@ -16,6 +16,8 @@
     "test:e2e:t4": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test test/e2e/tier4_application.test.ts",
     "test:e2e:t5": "node --experimental-strip-types --no-warnings=ExperimentalWarning --test test/e2e/tier5_adversarial.test.ts",
     "test:all": "npm run build && npm run test:unit && npm run test:e2e",
+    "setup:testnet": "node scripts/setup-testnet.js",
+    "wallet:status": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/check-balances.js",
     "start": "node --experimental-strip-types --no-warnings=ExperimentalWarning src/index.ts",
     "dashboard": "node --experimental-strip-types --no-warnings=ExperimentalWarning src/modules/dashboard/main.ts"
   },
