@@ -22,8 +22,15 @@ tombstone.json
 # Agent Teamwork Metadata (protects agent memory from git rollbacks)
 .agents/teamwork/
 
+# Local Agent Tooling (machine-specific paths)
+.codex/
+
 # OS and Editor Artifacts
 .DS_Store
 Thumbs.db
 *.log
 npm-debug.log*
+
+# Resumo e Anotações Operacionais do Usuário
+RESUMO_ORIENTACOES.md
+
