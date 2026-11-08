@@ -17,7 +17,6 @@ import {
   overviewModel,
   parseSseFrame,
   reconnectDelay,
-  seriesPath,
 } from './ui_core.js';
 
 const params = new URLSearchParams(location.search);
@@ -75,6 +74,38 @@ function setConnection(state, label) {
   const badge = el('connection');
   badge.dataset.state = state;
   el('connection-label').textContent = label;
+}
+
+function tierTag(tier) {
+  const value = String(tier ?? '');
+  if (!value) return '<span class="muted">—</span>';
+  return `<span class="tag tier-tag" data-tier="${escapeHtml(value)}">${escapeHtml(value)}</span>`;
+}
+
+function setTheme(theme) {
+  const next = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  const label = next === 'light' ? 'claro' : 'escuro';
+  const button = el('theme-toggle');
+  if (button) {
+    button.textContent = `tema · ${label}`;
+    button.setAttribute('aria-label', `Alternar tema (atual: ${label})`);
+  }
+  try {
+    localStorage.setItem('apex-theme', next);
+  } catch {
+    // storage can be unavailable in private contexts
+  }
+}
+
+function wireTheme() {
+  setTheme(document.documentElement.dataset.theme);
+  const button = el('theme-toggle');
+  if (button) {
+    button.addEventListener('click', () => {
+      setTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+    });
+  }
 }
 
 // ==============================================================================
@@ -148,12 +179,12 @@ function renderTopbar(data) {
   }
   const tier = el('tier');
   tier.dataset.tier = overview.tier ?? '';
-  tier.textContent = overview.tier ? `tier ${overview.tierLabel}` : 'tier —';
+  el('tier-text').textContent = overview.tier ? `tier ${overview.tierLabel}` : 'tier —';
   el('balance').textContent = overview.balanceText;
   el('network-mode').textContent = data.networkMode ?? '—';
 
   const ageSeconds = Math.max(0, (Date.now() - Number(data.generatedAt ?? Date.now())) / 1000);
-  el('data-age').textContent = `dados de ${formatAge(ageSeconds)} atrás`;
+  el('data-age').textContent = `há ${formatAge(ageSeconds)}`;
 }
 
 function renderOverview(data) {
@@ -190,40 +221,73 @@ function renderChart(container, series) {
     return;
   }
 
-  const width = 720;
-  const height = 220;
-  const pad = 18;
   const values = series.map((point) => Number(point.usd));
+  if (values.some((value) => !Number.isFinite(value))) {
+    container.innerHTML = '<div class="chart-empty">Sem série de saldo registrada</div>';
+    return;
+  }
+
+  // Match the viewBox to the painted box so text and strokes keep their shape.
+  const measured = Math.round(container.clientWidth || 0);
+  const width = measured > 260 ? measured : 720;
+  const height = 232;
+  const padX = 18;
+  const padTop = 22;
+  const padBottom = 20;
+
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const span = max - min || Math.abs(max) || 1;
-  const pointAt = (point, index) => {
-    const x =
-      series.length === 1 ? width / 2 : pad + (index * (width - pad * 2)) / (series.length - 1);
-    const y = height - pad - ((Number(point.usd) - min) / span) * (height - pad * 2);
-    return [x, y];
-  };
+  const flat = max - min < 0.005;
+  const domainPad = flat ? Math.max(Math.abs(max) * 0.05, 0.5) : (max - min) * 0.08;
+  const low = min - domainPad;
+  const high = max + domainPad;
+  const scaleY = (value) =>
+    height - padBottom - ((value - low) / (high - low)) * (height - padTop - padBottom);
 
-  const line = seriesPath(series, width, height, pad);
-  const first = pointAt(series[0], 0);
-  const last = pointAt(series[series.length - 1], series.length - 1);
-  const area = `${line} L${last[0].toFixed(1)},${height - pad} L${first[0].toFixed(1)},${height - pad} Z`;
+  const points = values.map((value, index) => {
+    const x =
+      values.length === 1 ? width / 2 : padX + (index * (width - padX * 2)) / (values.length - 1);
+    return [x, scaleY(value)];
+  });
+
+  const line = points
+    .map(([x, y], index) => `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`)
+    .join(' ');
+  const [firstX] = points[0];
+  const [lastX, lastY] = points[points.length - 1];
+  const gradientId = `chart-fill-${container.id || 'series'}`;
+  const fillArea =
+    flat || points.length < 2
+      ? ''
+      : `<defs>
+        <linearGradient id="${gradientId}" x1="0" y1="0" x2="0" y2="1">
+          <stop class="fill-top" offset="0%"></stop>
+          <stop class="fill-bottom" offset="100%"></stop>
+        </linearGradient>
+      </defs>
+      <path class="area" fill="url(#${gradientId})" d="${line} L${lastX.toFixed(1)},${height - padBottom} L${firstX.toFixed(1)},${height - padBottom} Z"></path>`;
 
   const grid = [0, 0.25, 0.5, 0.75, 1]
     .map((ratio) => {
-      const y = pad + ratio * (height - pad * 2);
-      return `<line class="grid-line" x1="${pad}" y1="${y.toFixed(1)}" x2="${width - pad}" y2="${y.toFixed(1)}"></line>`;
+      const y = padTop + ratio * (height - padTop - padBottom);
+      return `<line class="grid-line" x1="${padX}" y1="${y.toFixed(1)}" x2="${width - padX}" y2="${y.toFixed(1)}"></line>`;
     })
     .join('');
 
+  const axis = flat
+    ? ''
+    : `<text class="axis-label" x="${padX + 4}" y="${padTop - 7}">${escapeHtml(formatUsd(max))}</text>
+       <text class="axis-label" x="${padX + 4}" y="${height - 6}">${escapeHtml(formatUsd(min))}</text>`;
+
   container.innerHTML = `
     <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Saldo por ciclo">
+      ${fillArea}
       ${grid}
-      <path class="area" d="${area}"></path>
       <path class="line" d="${line}"></path>
-      <circle class="end-dot" cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="4"></circle>
-      <text class="axis-label" x="${pad}" y="${pad - 4}">${escapeHtml(formatUsd(max))}</text>
-      <text class="axis-label" x="${pad}" y="${height - 4}">${escapeHtml(formatUsd(min))}</text>
+      <line class="end-line" x1="${lastX.toFixed(1)}" y1="${padTop}" x2="${lastX.toFixed(1)}" y2="${height - padBottom}"></line>
+      <circle class="end-dot" cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="3.5"></circle>
+      <text class="end-label" x="${(lastX - 6).toFixed(1)}" y="${Math.max(13, lastY - 9).toFixed(1)}" text-anchor="end">${escapeHtml(formatUsd(values[values.length - 1]))}</text>
+      ${axis}
     </svg>
   `;
 }
@@ -261,7 +325,7 @@ function renderRecentActions(actions) {
         <tr data-action-id="${Number(action.id)}" tabindex="0">
           <td>${escapeHtml(action.component)}</td>
           <td>${escapeHtml(action.actionType)}</td>
-          <td>${escapeHtml(action.tier)}</td>
+          <td>${tierTag(action.tier)}</td>
           <td class="num">${escapeHtml(formatUsd(action.balanceUsd))}</td>
           <td class="mono">${escapeHtml(formatDateTime(action.timestamp))}</td>
         </tr>`;
@@ -276,7 +340,7 @@ function renderFinance(data) {
   const net = Number(revenue.netUsd ?? 0);
   const netEl = el('fin-net');
   netEl.textContent = formatUsd(net);
-  netEl.className = `kpi-value ${net >= 0 ? 'positive' : 'negative'}`;
+  netEl.className = `stat-value ${net >= 0 ? 'value-good' : 'value-bad'}`;
   el('fin-runway').textContent =
     revenue.runwayDays == null ? 'sem queima registrada' : `${revenue.runwayDays} dias`;
   el('fin-burn').textContent = `queima 7d ${formatUsd(revenue.burn7dUsd ?? 0)}`;
@@ -477,7 +541,7 @@ function renderActionRows(items) {
           <td class="mono">${Number(action.id)}</td>
           <td>${escapeHtml(action.component)}</td>
           <td>${escapeHtml(action.actionType)}</td>
-          <td>${escapeHtml(action.tier)}</td>
+          <td>${tierTag(action.tier)}</td>
           <td class="num">${escapeHtml(formatUsd(action.balanceUsd))}</td>
           <td class="mono">${escapeHtml(formatDateTime(action.timestamp))}</td>
         </tr>`;
@@ -606,6 +670,7 @@ function refreshExportLinks() {
 }
 
 function wire() {
+  wireTheme();
   document.querySelectorAll('.nav-item').forEach((item) => {
     item.addEventListener('click', () => showView(item.dataset.view));
   });
@@ -644,6 +709,16 @@ function wire() {
     if (document.visibilityState === 'visible' && (!stream || stream.readyState === 2)) {
       connect();
     }
+  });
+
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (!snapshot) return;
+      renderChart(el('balance-chart'), snapshot.revenue?.series ?? []);
+      renderChart(el('finance-chart'), snapshot.revenue?.series ?? []);
+    }, 150);
   });
 }
 

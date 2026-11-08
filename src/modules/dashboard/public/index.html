@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
     <title>Mission Control — Apex AEA</title>
+    <script src="/assets/theme.js"></script>
     <link rel="stylesheet" href="/assets/styles.css" />
   </head>
   <body>
@@ -13,34 +14,51 @@
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">A</span>
-        <div>
-          <p class="brand-name">Mission Control</p>
-          <p class="brand-sub">Apex AEA · observador somente leitura</p>
+        <div class="brand-text">
+          <p class="brand-name">Apex AEA</p>
+          <p class="brand-sub">Mission Control · somente leitura</p>
         </div>
       </div>
 
-      <div class="topbar-status">
+      <div class="statusbar">
         <span id="connection" class="connection" data-state="connecting">
           <span class="dot" aria-hidden="true"></span>
           <span id="connection-label">conectando</span>
         </span>
-        <span id="liveness" class="pill pill-liveness" data-state="UNKNOWN">sem dados</span>
-        <span id="tier" class="pill pill-tier" data-tier="">tier —</span>
-        <span id="balance" class="balance">US$ 0,00</span>
+        <span id="liveness" class="tag tag-live" data-state="UNKNOWN">sem dados</span>
+        <span id="tier" class="tier" data-tier="">
+          <span class="tier-meter" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <span id="tier-text">tier —</span>
+        </span>
+        <span class="status-sep" aria-hidden="true"></span>
+        <span class="balance">
+          <span class="balance-label">saldo</span>
+          <span id="balance">US$ 0,00</span>
+        </span>
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Alternar tema (atual: escuro)">
+          tema · escuro
+        </button>
       </div>
     </header>
 
     <div class="shell">
       <nav class="sidenav" aria-label="Seções">
+        <p class="nav-label">Console</p>
         <button class="nav-item is-active" data-view="overview" type="button">Visão geral</button>
         <button class="nav-item" data-view="operations" type="button">Operações</button>
         <button class="nav-item" data-view="finance" type="button">Financeiro</button>
+
+        <p class="nav-label">Sistema</p>
         <button class="nav-item" data-view="config" type="button">Configuração</button>
         <button class="nav-item" data-view="models" type="button">Modelos</button>
         <button class="nav-item" data-view="clan" type="button">Clã e permadeath</button>
+
         <div class="sidenav-foot">
-          <p id="data-age">dados de —</p>
-          <p class="muted">rede <span id="network-mode">—</span></p>
+          <dl class="foot-list">
+            <div><dt>rede</dt><dd id="network-mode">—</dd></div>
+            <div><dt>atualizado</dt><dd id="data-age">—</dd></div>
+            <div><dt>acesso</dt><dd>leitura</dd></div>
+          </dl>
         </div>
       </nav>
 
@@ -48,9 +66,9 @@
         <!-- ============================ OVERVIEW ============================ -->
         <section class="view" data-view-panel="overview">
           <div class="view-head">
-            <div>
+            <div class="view-title">
               <h1>Visão geral</h1>
-              <p class="muted">O estado do agente no último snapshot recebido.</p>
+              <p class="view-sub">O estado do agente no último snapshot recebido.</p>
             </div>
             <div class="view-actions">
               <a id="export-snapshot" class="button ghost" href="/api/export?table=actions&amp;format=json" download>Exportar ações</a>
@@ -62,53 +80,53 @@
             <p>Inicie o agente com <code>npm start</code> para começar a acompanhar os ciclos.</p>
           </div>
 
-          <div class="kpi-grid">
-            <article class="card kpi">
-              <p class="kpi-label">Saldo líquido</p>
-              <p id="kpi-balance" class="kpi-value">—</p>
-              <p id="kpi-balance-source" class="kpi-foot">sem leitura</p>
+          <section class="board" aria-label="Indicadores do agente">
+            <article class="stat stat-lead">
+              <p class="stat-label">Saldo líquido</p>
+              <p id="kpi-balance" class="stat-value">—</p>
+              <p id="kpi-balance-source" class="stat-foot">sem leitura</p>
             </article>
-            <article class="card kpi">
-              <p class="kpi-label">Ciclos executados</p>
-              <p id="kpi-cycles" class="kpi-value">0</p>
-              <p class="kpi-foot">TICK_EVALUATED</p>
+            <article class="stat">
+              <p class="stat-label">Ciclos executados</p>
+              <p id="kpi-cycles" class="stat-value">0</p>
+              <p class="stat-foot">TICK_EVALUATED</p>
             </article>
-            <article class="card kpi">
-              <p class="kpi-label">Ações auditadas</p>
-              <p id="kpi-actions" class="kpi-value">0</p>
-              <p id="kpi-components" class="kpi-foot">0 componentes</p>
+            <article class="stat">
+              <p class="stat-label">Ações auditadas</p>
+              <p id="kpi-actions" class="stat-value">0</p>
+              <p id="kpi-components" class="stat-foot">0 componentes</p>
             </article>
-            <article class="card kpi">
-              <p class="kpi-label">Classe de modelo</p>
-              <p id="kpi-model" class="kpi-value">—</p>
-              <p id="kpi-model-note" class="kpi-foot">derivada do tier</p>
+            <article class="stat">
+              <p class="stat-label">Classe de modelo</p>
+              <p id="kpi-model" class="stat-value stat-value-text">—</p>
+              <p id="kpi-model-note" class="stat-foot">derivada do tier</p>
             </article>
-          </div>
+          </section>
 
-          <div class="grid-two">
-            <article class="card">
-              <div class="card-head">
+          <div class="split split-wide">
+            <section class="panel panel-chart">
+              <div class="panel-head">
                 <h2>Saldo ao longo do tempo</h2>
-                <span class="muted" id="chart-caption">—</span>
+                <span id="chart-caption" class="panel-meta">—</span>
               </div>
               <div id="balance-chart" class="chart" role="img" aria-label="Série de saldo por ciclo"></div>
-            </article>
+            </section>
 
-            <article class="card">
-              <div class="card-head">
+            <section class="panel">
+              <div class="panel-head">
                 <h2>Alertas recentes</h2>
-                <span class="muted">máx. 20</span>
+                <span class="panel-meta">máx. 20</span>
               </div>
               <ul id="alert-feed" class="alert-feed" aria-live="polite">
                 <li class="alert alert-info">Nenhum alerta registrado.</li>
               </ul>
-            </article>
+            </section>
           </div>
 
-          <article class="card">
-            <div class="card-head">
+          <section class="panel">
+            <div class="panel-head">
               <h2>Últimas operações</h2>
-              <button class="button ghost" type="button" data-goto="operations">Ver histórico</button>
+              <button class="button ghost button-sm" type="button" data-goto="operations">Ver histórico</button>
             </div>
             <div class="table-wrap">
               <table class="table">
@@ -117,7 +135,7 @@
                     <th scope="col">Componente</th>
                     <th scope="col">Operação</th>
                     <th scope="col">Tier</th>
-                    <th scope="col">Saldo</th>
+                    <th scope="col" class="col-num">Saldo</th>
                     <th scope="col">Quando</th>
                   </tr>
                 </thead>
@@ -125,15 +143,15 @@
               </table>
             </div>
             <p id="recent-actions-empty" class="empty-inline" hidden>Nenhuma operação registrada ainda.</p>
-          </article>
+          </section>
         </section>
 
         <!-- ============================ OPERATIONS ============================ -->
         <section class="view" data-view-panel="operations" hidden>
           <div class="view-head">
-            <div>
+            <div class="view-title">
               <h1>Operações</h1>
-              <p class="muted">Histórico auditável de tudo que o agente registrou.</p>
+              <p class="view-sub">Histórico auditável de tudo que o agente registrou.</p>
             </div>
             <div class="view-actions">
               <a id="export-actions-csv" class="button ghost" href="/api/export?table=actions&amp;format=csv" download>CSV</a>
@@ -141,23 +159,23 @@
             </div>
           </div>
 
-          <div class="card">
-            <form id="action-filters" class="filters">
+          <section class="panel">
+            <form id="action-filters" class="toolbar">
               <label for="filter-component">Componente</label>
               <input id="filter-component" name="component" type="search" placeholder="ex.: heartbeat" autocomplete="off" />
-              <button class="button" type="submit">Filtrar</button>
-              <button class="button ghost" type="button" id="clear-filters">Limpar</button>
+              <button class="button button-sm" type="submit">Filtrar</button>
+              <button class="button ghost button-sm" type="button" id="clear-filters">Limpar</button>
             </form>
 
             <div class="table-wrap">
               <table class="table">
                 <thead>
                   <tr>
-                    <th scope="col">#</th>
+                    <th scope="col" class="col-id">#</th>
                     <th scope="col">Componente</th>
                     <th scope="col">Operação</th>
                     <th scope="col">Tier</th>
-                    <th scope="col">Saldo</th>
+                    <th scope="col" class="col-num">Saldo</th>
                     <th scope="col">Quando</th>
                   </tr>
                 </thead>
@@ -165,172 +183,184 @@
               </table>
             </div>
 
-            <p id="actions-empty" class="empty-inline" hidden>Nenhuma operação encontrada para este filtro</p>
-            <div class="card-foot">
-              <button id="load-more" class="button" type="button" hidden>Carregar mais</button>
-              <span id="actions-count" class="muted"></span>
+            <p id="actions-empty" class="empty-inline pad" hidden>Nenhuma operação encontrada para este filtro</p>
+            <div class="panel-foot pad">
+              <span id="actions-count" class="panel-meta"></span>
+              <button id="load-more" class="button ghost button-sm" type="button" hidden>Carregar mais</button>
             </div>
-          </div>
+          </section>
         </section>
 
         <!-- ============================ FINANCE ============================ -->
         <section class="view" data-view-panel="finance" hidden>
           <div class="view-head">
-            <div>
+            <div class="view-title">
               <h1>Financeiro</h1>
-              <p class="muted">Receita, despesa, resultado e exposição aberta.</p>
+              <p class="view-sub">Receita, despesa, resultado e exposição aberta.</p>
             </div>
             <div class="view-actions">
               <a id="export-ledger" class="button ghost" href="/api/export?table=ledger&amp;format=csv" download>Ledger CSV</a>
             </div>
           </div>
 
-          <div class="kpi-grid">
-            <article class="card kpi">
-              <p class="kpi-label">Receita</p>
-              <p id="fin-revenue" class="kpi-value positive">—</p>
+          <section class="board" aria-label="Resultado financeiro">
+            <article class="stat">
+              <p class="stat-label">Receita</p>
+              <p id="fin-revenue" class="stat-value value-good">—</p>
             </article>
-            <article class="card kpi">
-              <p class="kpi-label">Despesa</p>
-              <p id="fin-expense" class="kpi-value negative">—</p>
+            <article class="stat">
+              <p class="stat-label">Despesa</p>
+              <p id="fin-expense" class="stat-value value-bad">—</p>
             </article>
-            <article class="card kpi">
-              <p class="kpi-label">Resultado líquido</p>
-              <p id="fin-net" class="kpi-value">—</p>
+            <article class="stat">
+              <p class="stat-label">Resultado líquido</p>
+              <p id="fin-net" class="stat-value">—</p>
             </article>
-            <article class="card kpi">
-              <p class="kpi-label">Runway</p>
-              <p id="fin-runway" class="kpi-value">—</p>
-              <p id="fin-burn" class="kpi-foot">queima 7d —</p>
+            <article class="stat">
+              <p class="stat-label">Runway</p>
+              <p id="fin-runway" class="stat-value stat-value-text">—</p>
+              <p id="fin-burn" class="stat-foot">queima 7d —</p>
             </article>
-          </div>
+          </section>
 
-          <div class="grid-two">
-            <article class="card">
-              <div class="card-head">
+          <div class="split split-wide">
+            <section class="panel">
+              <div class="panel-head">
                 <h2>Receita por fonte</h2>
-                <span class="muted">entry_type</span>
+                <span class="panel-meta">entry_type</span>
               </div>
-              <ul id="revenue-groups" class="bar-list"></ul>
-              <p id="revenue-empty" class="empty-inline" hidden>Sem lançamentos financeiros</p>
-            </article>
+              <div class="panel-body">
+                <ul id="revenue-groups" class="bar-list"></ul>
+                <p id="revenue-empty" class="empty-inline" hidden>Sem lançamentos financeiros</p>
+              </div>
+            </section>
 
-            <article class="card">
-              <div class="card-head">
+            <section class="panel">
+              <div class="panel-head">
                 <h2>Posições</h2>
-                <span class="muted">Polymarket</span>
+                <span class="panel-meta">Polymarket</span>
               </div>
-              <div id="positions-summary" class="mini-grid"></div>
-            </article>
+              <div class="panel-body">
+                <div id="positions-summary" class="mini-grid"></div>
+              </div>
+            </section>
           </div>
 
-          <article class="card">
-            <div class="card-head">
+          <section class="panel panel-chart">
+            <div class="panel-head">
               <h2>Evolução do saldo</h2>
-              <span class="muted">últimos ciclos</span>
+              <span class="panel-meta">últimos ciclos</span>
             </div>
             <div id="finance-chart" class="chart" role="img" aria-label="Série de saldo no tempo"></div>
-          </article>
+          </section>
         </section>
 
         <!-- ============================ CONFIG ============================ -->
         <section class="view" data-view-panel="config" hidden>
           <div class="view-head">
-            <div>
+            <div class="view-title">
               <h1>Configuração</h1>
-              <p class="muted">O que está carregado em memória. Segredos aparecem como <code>***</code>.</p>
+              <p class="view-sub">O que está carregado em memória. Segredos aparecem como <code>***</code>.</p>
             </div>
           </div>
-          <article class="card">
-            <div id="config-grid" class="kv-grid"></div>
-            <p id="config-empty" class="empty-inline" hidden>Configuração indisponível.</p>
-          </article>
+          <section class="panel">
+            <div class="panel-body">
+              <div id="config-grid" class="kv-grid"></div>
+              <p id="config-empty" class="empty-inline" hidden>Configuração indisponível.</p>
+            </div>
+          </section>
         </section>
 
         <!-- ============================ MODELS ============================ -->
         <section class="view" data-view-panel="models" hidden>
           <div class="view-head">
-            <div>
+            <div class="view-title">
               <h1>Modelos</h1>
-              <p class="muted">A classe de modelo que o tier atual libera.</p>
+              <p class="view-sub">A classe de modelo que o tier atual libera.</p>
             </div>
-            <span class="pill pill-warn">sem provedor de inferência configurado</span>
+            <span class="tag tag-warn">sem provedor de inferência configurado</span>
           </div>
 
-          <div class="grid-two">
-            <article class="card">
-              <div class="card-head">
+          <div class="split">
+            <section class="panel">
+              <div class="panel-head">
                 <h2>Tier atual</h2>
-                <span id="model-tier" class="pill pill-tier" data-tier="">tier —</span>
+                <span id="model-tier" class="tag tier-tag" data-tier="">tier —</span>
               </div>
-              <dl class="kv-list">
-                <div><dt>Classe de modelo</dt><dd id="model-class">—</dd></div>
-                <div><dt>Intervalo de heartbeat</dt><dd id="model-interval">—</dd></div>
-                <div><dt>Pesquisa especulativa</dt><dd id="model-research">—</dd></div>
-                <div><dt>Automodificação</dt><dd id="model-modification">—</dd></div>
-                <div><dt>Motivo do tier</dt><dd id="model-reason">—</dd></div>
-              </dl>
-            </article>
+              <div class="panel-body">
+                <dl class="kv-list">
+                  <div><dt>Classe de modelo</dt><dd id="model-class">—</dd></div>
+                  <div><dt>Intervalo de heartbeat</dt><dd id="model-interval">—</dd></div>
+                  <div><dt>Pesquisa especulativa</dt><dd id="model-research">—</dd></div>
+                  <div><dt>Automodificação</dt><dd id="model-modification">—</dd></div>
+                  <div><dt>Motivo do tier</dt><dd id="model-reason">—</dd></div>
+                </dl>
+              </div>
+            </section>
 
-            <article class="card">
-              <div class="card-head">
+            <section class="panel">
+              <div class="panel-head">
                 <h2>Operações liberadas</h2>
-                <span class="muted">derivadas do tier</span>
+                <span class="panel-meta">derivadas do tier</span>
               </div>
-              <ul id="model-operations" class="chip-list"></ul>
-            </article>
+              <div class="panel-body">
+                <ul id="model-operations" class="chip-list"></ul>
+              </div>
+            </section>
           </div>
 
-          <article class="card notice">
-            <h2>Sobre "modelos rodando"</h2>
-            <p>
-              O runtime atual não integra nenhum cliente de LLM. O que existe é a classe
-              de modelo atribuída pelo metabolismo — <code>advanced</code>,
-              <code>economic</code> ou <code>survival</code> — e as operações que cada
-              tier libera. Nenhum nome de provedor é exibido porque nenhum provedor está
-              configurado.
-            </p>
-          </article>
+          <section class="panel note">
+            <div class="panel-body">
+              <h2>Sobre "modelos rodando"</h2>
+              <p>
+                O runtime atual não integra nenhum cliente de LLM. O que existe é a classe
+                de modelo atribuída pelo metabolismo — <code>advanced</code>,
+                <code>economic</code> ou <code>survival</code> — e as operações que cada
+                tier libera. Nenhum nome de provedor é exibido porque nenhum provedor está
+                configurado.
+              </p>
+            </div>
+          </section>
         </section>
 
         <!-- ============================ CLAN ============================ -->
         <section class="view" data-view-panel="clan" hidden>
           <div class="view-head">
-            <div>
+            <div class="view-title">
               <h1>Clã e permadeath</h1>
-              <p class="muted">Linhagem, royalties e o pós-morte registrado.</p>
+              <p class="view-sub">Linhagem, royalties e o pós-morte registrado.</p>
             </div>
           </div>
 
-          <div class="grid-two">
-            <article class="card">
-              <div class="card-head">
+          <div class="split split-wide">
+            <section class="panel">
+              <div class="panel-head">
                 <h2>Linhagem</h2>
-                <span id="royalties-total" class="muted">royalties —</span>
+                <span id="royalties-total" class="panel-meta">royalties —</span>
               </div>
               <div class="table-wrap">
                 <table class="table">
                   <thead>
                     <tr>
-                      <th scope="col">Geração</th>
+                      <th scope="col" class="col-num">Geração</th>
                       <th scope="col">Endereço</th>
                       <th scope="col">Status</th>
-                      <th scope="col">Royalties</th>
+                      <th scope="col" class="col-num">Royalties</th>
                     </tr>
                   </thead>
                   <tbody id="lineage-rows"></tbody>
                 </table>
               </div>
-              <p id="lineage-empty" class="empty-inline" hidden>Nenhuma criança registrada.</p>
-            </article>
+              <p id="lineage-empty" class="empty-inline pad" hidden>Nenhuma criança registrada.</p>
+            </section>
 
-            <article class="card">
-              <div class="card-head">
+            <section class="panel">
+              <div class="panel-head">
                 <h2>Permadeath</h2>
-                <button id="download-tombstone" class="button ghost" type="button" hidden>Baixar tombstone.json</button>
+                <button id="download-tombstone" class="button ghost button-sm" type="button" hidden>Baixar tombstone.json</button>
               </div>
-              <div id="tombstone-body"></div>
-            </article>
+              <div id="tombstone-body" class="panel-body"></div>
+            </section>
           </div>
         </section>
       </main>
@@ -340,13 +370,13 @@
       <form method="dialog" class="dialog-head">
         <div>
           <h2 id="detail-title">Detalhe da operação</h2>
-          <p id="detail-meta" class="muted"></p>
+          <p id="detail-meta" class="dialog-meta"></p>
         </div>
-        <button class="button ghost" value="close" type="submit">Fechar</button>
+        <button class="button ghost button-sm" value="close" type="submit">Fechar</button>
       </form>
       <pre id="detail-body" class="detail-body"></pre>
       <div class="dialog-actions">
-        <button id="copy-detail" class="button" type="button">Copiar</button>
+        <button id="copy-detail" class="button button-sm" type="button">Copiar</button>
       </div>
     </dialog>
 
