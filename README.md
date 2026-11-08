@@ -1,6 +1,6 @@
 # Apex AEA — Agente Econômico Autônomo Soberano
 
-**Apex AEA** (*Autonomous Economic Agent*) é um agente econômico soberano construído em **TypeScript / Node.js 24+** com carteira cripto nativa (**Base** e **Polygon** via **Viem**), banco de dados contábil local (**SQLite** nativo `node:sqlite`), metabolismo adaptativo de custos de computação, protocolo irreversível de morte por falência (**Permadeath**), motor tri-fator de geração de receita (**Polymarket CLOB**, **Micropagamentos HTTP x402** e **Bounties Open-Source**), sistema imunológico de auto-cura via Git e autorreplicação darwiniana (**Mitose**) com fundo mútuo familiar de **5% de royalties**.
+**Apex AEA** (*Autonomous Economic Agent*) é um agente econômico soberano construído em **TypeScript / Node.js 24+** com carteira cripto nativa (**Base** e **Polygon** via **Viem**), banco de dados contábil local (**SQLite** nativo `node:sqlite`), metabolismo adaptativo de custos de computação, protocolo irreversível de morte por falência (**Permadeath**), motor tri-fator de geração de receita (**Polymarket CLOB**, **Micropagamentos HTTP x402** e **Bounties Open-Source**), sistema imunológico de auto-cura via Git, autorreplicação darwiniana (**Mitose**) com fundo mútuo familiar de **5% de royalties** e o painel de observabilidade **Mission Control** — somente leitura, em processo separado do daemon.
 
 ---
 
@@ -15,7 +15,8 @@
 7. [Requisitos e Instalação](#7-requisitos-e-instalação)
 8. [Configuração de Ambiente (`.env`)](#8-configuração-de-ambiente-env)
 9. [Execução e Comandos de Teste](#9-execução-e-comandos-de-teste)
-10. [Esquema Contábil SQLite e Auditoria](#10-esquema-contábil-sqlite-e-auditoria)
+10. [Mission Control (Dashboard)](#10-mission-control-dashboard)
+11. [Esquema Contábil SQLite e Auditoria](#11-esquema-contábil-sqlite-e-auditoria)
 
 ---
 
@@ -153,6 +154,11 @@ agente_money/
 │   │   ├── metabolism.ts                # Máquina de estados dos 4 Tiers metabólicos
 │   │   └── death.ts                     # Protocolo Permadeath e geração de tombstone.json
 │   ├── modules/
+│   │   ├── dashboard/
+│   │   │   ├── main.ts                  # Entrada do Mission Control (observer somente leitura)
+│   │   │   ├── server.ts                # Servidor HTTP GET-only, SSE e exportações CSV/JSON
+│   │   │   ├── snapshot.ts              # Snapshot do SQLite aberto em modo readOnly
+│   │   │   └── public/                  # SPA sem build step (HTML, CSS, JS e fontes IBM Plex)
 │   │   ├── polymarket/
 │   │   │   ├── kelly.ts                 # Cálculo Quarter-Kelly e trava de 5%
 │   │   │   ├── scanner.ts               # Scanner e filtro de oportunidades CLOB
@@ -165,7 +171,7 @@ agente_money/
 │       ├── immune_system.ts             # Sandbox de testes e auto-cura Git
 │       └── mitosis.ts                   # Mitose darwiniana, HKDF e royalties de 5%
 ├── test/
-│   ├── unit/                            # 13 suítes de testes unitários
+│   ├── unit/                            # 17 suítes de testes unitários (4 do Mission Control)
 │   ├── stress/                          # 5 suítes de testes de estresse e fuzzing
 │   └── e2e/                             # 4 suítes E2E (Tiers 1 a 4) + helpers e fixtures
 ├── .env.example                         # Modelo documentado de variáveis de ambiente
@@ -208,7 +214,7 @@ O projeto opera em três modos selecionáveis pela variável `NETWORK_MODE` no a
    - Conecta-se à **Base Mainnet** (`chainId: 8453`) e **Polygon PoS Mainnet** (`chainId: 137`).
    - Requer `AGENT_PRIVATE_KEY` dedicada (nunca utilize chaves pessoais) e `MOTHER_WALLET_ADDRESS` válida e diferente do endereço zero.
 
-Consulte todos os parâmetros disponíveis em [`.env.example`](.env.example).
+Consulte todos os parâmetros disponíveis em [`.env.example`](.env.example). As variáveis do painel de observabilidade (`DASHBOARD_HOST`, `DASHBOARD_PORT`, `DASHBOARD_TOKEN`) estão detalhadas na [seção 10.2](#102-configuração).
 
 ---
 
@@ -217,6 +223,9 @@ Consulte todos os parâmetros disponíveis em [`.env.example`](.env.example).
 ```bash
 # Iniciar o daemon do agente
 npm start
+
+# Subir o Mission Control (painel somente leitura) em http://127.0.0.1:7070
+npm run dashboard
 
 # Validar a sintaxe TypeScript de todos os arquivos (src/ e test/)
 npm run build
@@ -242,7 +251,96 @@ npm run test:e2e:t4   # Tier 4: Cenários macroeconômicos completos (13 cenári
 
 ---
 
-## 10. Esquema Contábil SQLite e Auditoria
+## 10. Mission Control (Dashboard)
+
+O **Mission Control** é o painel de observabilidade do agente: um processo **separado e somente leitura** que abre o SQLite com `readOnly: true`, aceita apenas requisições `GET` e nunca inicia, pausa ou controla o `HeartbeatDaemon`. Ele lê as tabelas `actions`, `ledger`, `polymarket_positions`, `lineage` e `system_config`, além do `tombstone.json`, e publica um snapshot do estado do agente por HTTP e SSE.
+
+```mermaid
+flowchart LR
+    Agent["HeartbeatDaemon — npm start"] -->|"append-only"| DB[("SQLite data/agent.db")]
+    Agent -->|"grava na morte"| TB["tombstone.json"]
+    DB -->|"readOnly: true"| SN["buildSnapshot()"]
+    TB --> SN
+    SN -->|"GET /api/snapshot"| SRV["DashboardServer — GET-only"]
+    SN -->|"SSE a cada 2s"| SRV
+    SRV -->|"HTML, CSS, JS e fontes"| SPA["SPA Mission Control"]
+```
+
+### 10.1. Como executar
+
+O painel não substitui o daemon; rode os dois processos em terminais distintos:
+
+```bash
+# Terminal 1 — agente
+npm start
+
+# Terminal 2 — Mission Control
+npm run dashboard
+```
+
+Abra `http://127.0.0.1:7070`. O painel também funciona com o agente parado: nesse caso recalcula o liveness a partir do último `TICK_EVALUATED` (chegando a `STALE` ou `DEAD` com o passar do tempo) e exibe o tombstone, se existir.
+
+### 10.2. Configuração
+
+| Variável | Padrão | Descrição |
+| :--- | :--- | :--- |
+| `DASHBOARD_HOST` | `127.0.0.1` | Endereço de bind. Fora de `127.0.0.1`, `localhost` e `::1`, o token passa a ser obrigatório. |
+| `DASHBOARD_PORT` | `7070` | Porta TCP do painel (validada entre `0` e `65535`). |
+| `DASHBOARD_TOKEN` | *(vazio)* | Quando definido, exige `Authorization: Bearer <token>` ou `?token=<token>` em todas as rotas. |
+| `DATABASE_PATH` | `./data/agent.db` | Banco compartilhado com o agente; o painel sempre o abre em modo somente leitura. |
+| `TOMBSTONE_PATH` | `tombstone.json` | Caminho do tombstone gerado pelo protocolo de Permadeath. |
+
+### 10.3. Telas
+
+| Tela | Conteúdo |
+| :--- | :--- |
+| **Visão geral** | Saldo líquido, ciclos (`TICK_EVALUATED`), ações auditadas, classe de modelo derivada do tier, série de saldo por ciclo, alertas recentes (máx. 20) e últimas operações. |
+| **Operações** | Histórico auditável com filtro por componente, paginação por cursor (`before`) e diálogo de detalhe com o JSON da ação. |
+| **Financeiro** | Receita, despesa, resultado líquido, runway e queima de 7 dias; receita agrupada por `entry_type`; resumo de posições da Polymarket e evolução do saldo. |
+| **Configuração** | Configuração carregada em memória e overrides do SQLite, com segredos mascarados como `***`. |
+| **Modelos** | Tier atual, classe de modelo liberada, intervalo de heartbeat, pesquisa especulativa, automodificação e operações permitidas. |
+| **Clã e permadeath** | Linhagem de sub-carteiras com royalties pagos, além do tombstone (visualização e download de `tombstone.json`). |
+
+### 10.4. API HTTP e streaming
+
+Todas as rotas são `GET`; qualquer outro método responde `405 MethodNotAllowed`. Com `DASHBOARD_TOKEN` configurado, requisições sem credencial respondem `401 Unauthorized`.
+
+| Rota | Descrição |
+| :--- | :--- |
+| `/` e `/assets/*` | SPA e seus arquivos estáticos (CSS, JS, fontes `.woff2`). |
+| `/api/stream` | SSE com um snapshot a cada 2s (`event: snapshot`, `id` crescente, retomada via `Last-Event-ID`) e `ping` a cada 15s. |
+| `/api/snapshot` | Snapshot completo: `liveness`, `tier`, `balance`, `kpi`, `revenue`, `activity`, `alerts`, `positions`, `lineage`, `x402`, `config`, `degraded` e `tombstone`. |
+| `/api/actions` | Ações paginadas: `component`, `before` e `limit` (1–500, padrão 50). |
+| `/api/ledger` | Lançamentos com totais: `entryType`, `chain` e `limit` (1–500, padrão 100). |
+| `/api/positions` | Posições da Polymarket filtradas por `status` (`OPEN`, `WON`, `LOST`, `CANCELLED`). |
+| `/api/lineage` | Linhagem do clã e royalties consolidados. |
+| `/api/config` | Configuração sanitizada, sem chaves privadas ou segredos. |
+| `/api/export` | Exportação de `actions`, `ledger`, `positions` ou `lineage` em `csv` ou `json` (até 10.000 linhas). |
+| `/api/health` | Saúde do processo: `status`, estado do banco, `uptimeMs`, `seq` e `version`. |
+
+### 10.5. Segurança e limites
+
+- Escuta apenas em `localhost` por padrão; publicar em outra interface exige `DASHBOARD_TOKEN`.
+- Nenhuma escrita: o SQLite é aberto com `readOnly: true` e o teste `C39` prova que o hash do banco não muda.
+- Cabeçalhos fixos em todas as respostas: `Content-Security-Policy: default-src 'self'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` e `Cache-Control: no-store`.
+- A SPA não usa origem externa: fontes e assets são servidos pelo próprio painel, e scripts inline não são necessários.
+- Valores sensíveis da configuração viram `***`; o snapshot e o endpoint `/api/config` nunca expõem a chave privada.
+- Listagens são limitadas a 500 registros por chamada e exportações a 10.000 linhas.
+
+### 10.6. Interface (design system)
+
+- **Tema "terminal financeiro"**: tinta grafite, texto osso e um único sinal âmbar; verde e vermelho ficam reservados para P&L e liveness. O tema escuro é o padrão, com alternância manual para claro no topo da página.
+- **Persistência de tema**: a preferência fica em `localStorage['apex-theme']` e é aplicada antes do primeiro paint por `public/theme.js` (a CSP bloqueia scripts inline), evitando flash de tema.
+- **Tipografia**: IBM Plex Sans variável (400–700) e IBM Plex Mono (400/500/600), auto-hospedadas em `public/` (`plex-*.woff2`) sob licença OFL em `plex-LICENSE.txt`.
+- **Composição**: topbar fixa com status de conexão, liveness, tier e saldo; board de KPIs com divisórias de 1px; painéis sem sombra; tabelas densas; medidor de tier em 4 níveis e alertas com marcadores de severidade.
+- **Gráficos**: SVG inline gerado em `public/app.js`, com área em gradiente apenas para séries não planas e marcador no último ponto.
+- **Sem build step**: HTML, CSS e módulos ES puros; formatação, parsing de SSE e derivações de estado ficam em `public/ui_core.js`.
+
+A cobertura dedicada está em `test/unit/dashboard_*.test.ts` (53 verificações: assets, servidor HTTP/SSE, snapshot somente leitura e helpers de UI). Para os contratos internos completos, consulte a [seção 5 de `docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#5-mission-control--observabilidade-somente-leitura).
+
+---
+
+## 11. Esquema Contábil SQLite e Auditoria
 
 O banco de dados SQLite ([`src/core/database.ts`](src/core/database.ts)) mantém 5 tabelas auditáveis com modo `WAL` e integridade transacional:
 
