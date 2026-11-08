@@ -19,7 +19,7 @@ describe('Mission Control assets', () => {
   });
 
   it('ships every asset the SPA imports, with no external origin', () => {
-    for (const name of ['index.html', 'app.js', 'ui_core.js', 'styles.css']) {
+    for (const name of ['index.html', 'app.js', 'ui_core.js', 'theme.js', 'styles.css']) {
       const filePath = path.join(PUBLIC_DIR, name);
       assert.equal(fs.existsSync(filePath), true, `${name} is missing`);
       const content = fs.readFileSync(filePath, 'utf8');

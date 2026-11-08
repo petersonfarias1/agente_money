@@ -37,6 +37,8 @@ const ASSET_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
   '.svg': 'image/svg+xml',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
 };
 
 const LEDGER_TYPES = new Set<LedgerEntryType>([
