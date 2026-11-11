@@ -9,9 +9,10 @@
 
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
-import type { AppConfig, ModelClass, MetabolicTier, TierStatus } from '../../types.ts';
+import type { AppConfig, InferenceMode, ModelClass, MetabolicTier, TierStatus } from '../../types.ts';
 import { getConfig } from '../../config.ts';
 import { evaluateTier } from '../../core/metabolism.ts';
+import type { AgentControlSnapshot } from './agent_control.ts';
 
 // ==============================================================================
 // Types
@@ -21,6 +22,7 @@ export type LivenessState = 'ALIVE' | 'STALE' | 'DEAD' | 'UNKNOWN';
 
 export interface SnapshotState {
   seq: number;
+  control?: AgentControlSnapshot;
 }
 
 export interface ActionRow {
@@ -67,6 +69,16 @@ export interface Liveness {
   detail: string;
 }
 
+export interface MissionControlInferenceView {
+  mode: InferenceMode;
+  providerId: string | null;
+  providerModel: string | null;
+  callsUsed: number;
+  capPerTick: number;
+  source: 'provider' | 'deterministic';
+  fallbackReason: string | null;
+}
+
 export interface SnapshotOptions {
   dbPath?: string;
   tombstonePath?: string;
@@ -75,6 +87,7 @@ export interface SnapshotOptions {
   now?: () => number;
   probeTimeoutMs?: number;
   fetchImpl?: typeof fetch;
+  inference?: Partial<MissionControlInferenceView>;
 }
 
 const TIER_RANK: Record<string, number> = {
@@ -193,7 +206,11 @@ export function alertSeverity(actionType: string): 'critical' | 'warning' | 'inf
   ) {
     return 'critical';
   }
-  if (actionType === 'REPLAY_ATTACK_PREVENTED' || actionType === 'DAEMON_STOPPED') {
+  if (
+    actionType === 'REPLAY_ATTACK_PREVENTED' ||
+    actionType === 'DAEMON_STOPPED' ||
+    actionType === 'INFERENCE_FALLBACK'
+  ) {
     return 'warning';
   }
   return 'info';
@@ -418,6 +435,7 @@ const FALLBACK_CONFIG: AppConfig = {
   x402: { port: 4020, priceUsdc: 0.01, settlementChain: 'base' },
   bounties: { minRewardUsd: 10 },
   evolution: { mitosisMultiplier: 3, royaltyPercentage: 5 },
+  inference: { mode: 'free', capPerTick: 5, providers: [] },
   mock: { useMockApis: true, initialBalanceUsd: 75, simulateErrors: false },
 };
 
@@ -694,9 +712,38 @@ export async function buildSnapshot(
       }
     : null;
 
+  const inferenceConfig = config.inference;
+  const persistedInferenceStatus = actions.find(
+    (action) => action.component === 'inference' && action.actionType === 'INFERENCE_STATUS'
+  );
+  let persistedInference: Partial<MissionControlInferenceView> = {};
+  if (persistedInferenceStatus) {
+    try {
+      persistedInference = JSON.parse(persistedInferenceStatus.details) as Partial<MissionControlInferenceView>;
+    } catch {
+      persistedInference = {};
+    }
+  }
+  const activeInferenceProvider = inferenceConfig.providers.find(
+    (provider) =>
+      inferenceConfig.mode === 'paid'
+        ? !provider.free && Boolean(provider.apiKey)
+        : provider.free
+  );
+  const inference: MissionControlInferenceView = {
+    mode: options.inference?.mode ?? persistedInference.mode ?? inferenceConfig.mode,
+    providerId: options.inference?.providerId ?? persistedInference.providerId ?? activeInferenceProvider?.id ?? null,
+    providerModel: options.inference?.providerModel ?? persistedInference.providerModel ?? activeInferenceProvider?.model ?? null,
+    callsUsed: options.inference?.callsUsed ?? persistedInference.callsUsed ?? 0,
+    capPerTick: options.inference?.capPerTick ?? persistedInference.capPerTick ?? inferenceConfig.capPerTick,
+    source: options.inference?.source ?? persistedInference.source ?? (activeInferenceProvider ? 'provider' : 'deterministic'),
+    fallbackReason: options.inference?.fallbackReason ?? persistedInference.fallbackReason ?? null,
+  };
+
   return {
     generatedAt: now,
     seq,
+    control: state.control ?? { state: 'stopped', pid: null },
     networkMode: config.networkMode,
     agent: {
       name: tombstone.present && !tombstone.invalid ? (tombstone.data?.agentName ?? null) : null,
@@ -763,6 +810,7 @@ export async function buildSnapshot(
       health: probe.health ?? null,
       reason: probe.reason ?? null,
     },
+    inference,
     config: sanitized,
     degraded,
     tombstone,

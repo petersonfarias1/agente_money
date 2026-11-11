@@ -50,6 +50,7 @@ export interface FeasibilityEvaluation {
   expectedNetProfitUsd: number;
   isFeasible: boolean;
   confidence: number;
+  inferenceOrigin?: 'provider' | 'deterministic';
   reasons: string[];
   rejectionReason?: string;
 }
@@ -327,7 +328,7 @@ export function filterMicrotasks(
 export class BountyEvaluator {
   public static evaluate(
     task: BountyTask,
-    options?: { minScore?: number; minRewardUsd?: number }
+    options?: { minScore?: number; minRewardUsd?: number; modelScore?: number; inferenceOrigin?: 'provider' | 'deterministic' }
   ): FeasibilityEvaluation {
     const minScore = options?.minScore ?? 0.70;
     const minReward = options?.minRewardUsd ?? 10.0;
@@ -389,7 +390,7 @@ export class BountyEvaluator {
     }
 
     // Total Weighted Feasibility Score
-    const score = Number(
+    const deterministicScore = Number(
       (
         0.35 * difficultyScore +
         0.25 * categoryScore +
@@ -397,6 +398,7 @@ export class BountyEvaluator {
         0.20 * techCompatibilityScore
       ).toFixed(4)
     );
+    const score = options?.modelScore ?? deterministicScore;
 
     // 6. Economic Profitability Estimation
     const estimatedCostUsd = Number(
@@ -446,6 +448,7 @@ export class BountyEvaluator {
       expectedNetProfitUsd,
       isFeasible,
       confidence: score,
+      inferenceOrigin: options?.inferenceOrigin ?? 'deterministic',
       reasons,
       rejectionReason,
     };
@@ -591,9 +594,13 @@ export class BountiesScanner {
     return filtered;
   }
 
-  public evaluateBounty(task: BountyTask): FeasibilityEvaluation {
+  public evaluateBounty(
+    task: BountyTask,
+    options?: { modelScore?: number; inferenceOrigin?: 'provider' | 'deterministic' }
+  ): FeasibilityEvaluation {
     const evaluation = BountyEvaluator.evaluate(task, {
       minRewardUsd: this.config.bounties.minRewardUsd,
+      ...options,
     });
 
     if (this.database && this.database.isOpen()) {
@@ -608,6 +615,7 @@ export class BountiesScanner {
             isFeasible: evaluation.isFeasible,
             expectedNetProfitUsd: evaluation.expectedNetProfitUsd,
             rejectionReason: evaluation.rejectionReason,
+            inferenceOrigin: evaluation.inferenceOrigin,
           }),
           tier: 'VERDE',
           balanceUsd: 0,

@@ -18,6 +18,8 @@ import type {
   NetworkMode,
   LogLevel,
   SupportedChain,
+  InferenceConfig,
+  InferenceMode,
 } from './types.ts';
 
 export class ConfigValidationError extends Error {
@@ -124,6 +126,49 @@ export function isKnownMockPrivateKey(key: string): boolean {
     normalized ===
       '0x0000000000000000000000000000000000000000000000000000000000000001'
   );
+}
+
+/**
+ * Parses the ordered LLM provider queue from a JSON array environment variable.
+ */
+export function parseInferenceProviders(raw: string | undefined): Array<{
+  id: string;
+  type: 'ollama' | 'openai';
+  baseUrl: string;
+  apiKey?: string;
+  model: string;
+  free: boolean;
+}> {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new ConfigValidationError(
+      `Invalid INFERENCE_PROVIDERS: '${raw}'. Must be a JSON array of provider objects.`
+    );
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new ConfigValidationError(
+      `Invalid INFERENCE_PROVIDERS: '${raw}'. Must be a JSON array of provider objects.`
+    );
+  }
+
+  return parsed.map((entry: unknown, index: number) => {
+    const record = (entry ?? {}) as Record<string, unknown>;
+    const type: 'ollama' | 'openai' = record.type === 'openai' ? 'openai' : 'ollama';
+    return {
+      id: String(record.id ?? `provider-${index}`),
+      type,
+      baseUrl: String(record.baseUrl ?? (type === 'ollama' ? 'http://localhost:11434' : 'https://api.openai.com/v1')),
+      apiKey: typeof record.apiKey === 'string' ? record.apiKey : undefined,
+      model: String(record.model ?? (type === 'ollama' ? 'llama3' : 'gpt-4o-mini')),
+      free: record.free === undefined ? type === 'ollama' : Boolean(record.free),
+    };
+  });
 }
 
 /**
@@ -448,6 +493,29 @@ export function loadConfig(
     env.MOCK_SIMULATE_ERRORS !== undefined &&
     env.MOCK_SIMULATE_ERRORS.trim().toLowerCase() === 'true';
 
+  // 11.5 Inference Mode & LLM Provider Queue (free | paid, deterministic fallback)
+  const rawInferenceMode = (env.INFERENCE_MODE || 'free').trim().toLowerCase();
+  if (rawInferenceMode !== 'free' && rawInferenceMode !== 'paid') {
+    throw new ConfigValidationError(
+      `Invalid INFERENCE_MODE: '${env.INFERENCE_MODE}'. Must be 'free' or 'paid'.`
+    );
+  }
+  const inferenceMode: InferenceMode = rawInferenceMode;
+
+  const rawInferenceCapText = env.INFERENCE_CAP_PER_TICK || '5';
+  const rawInferenceCap = Number(rawInferenceCapText);
+  if (!/^\d+$/.test(rawInferenceCapText) || !Number.isSafeInteger(rawInferenceCap) || rawInferenceCap <= 0) {
+    throw new ConfigValidationError(
+      `Invalid INFERENCE_CAP_PER_TICK: '${env.INFERENCE_CAP_PER_TICK}'. Must be a positive integer.`
+    );
+  }
+
+  const inference: InferenceConfig = {
+    mode: inferenceMode,
+    capPerTick: rawInferenceCap,
+    providers: parseInferenceProviders(env.INFERENCE_PROVIDERS),
+  };
+
   // 12. Final AppConfig assembly
   const appConfig: AppConfig = {
     nodeEnv,
@@ -493,6 +561,7 @@ export function loadConfig(
       mitosisMultiplier,
       royaltyPercentage,
     },
+    inference,
     mock: {
       useMockApis,
       initialBalanceUsd: Number.isNaN(mockBalanceUsd) ? 75.0 : mockBalanceUsd,

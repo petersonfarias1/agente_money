@@ -22,6 +22,7 @@ import {
   sanitizeConfig,
 } from './snapshot.ts';
 import type { SnapshotOptions, SnapshotState } from './snapshot.ts';
+import { AgentControl } from './agent_control.ts';
 
 const PUBLIC_DIR = fileURLToPath(new URL('./public/', import.meta.url));
 
@@ -96,6 +97,8 @@ export interface DashboardServerOptions {
   probeTimeoutMs?: number;
   fetchImpl?: typeof fetch;
   streamIntervalMs?: number;
+  inference?: SnapshotOptions['inference'];
+  agentControl?: AgentControl;
 }
 
 interface QueryResult {
@@ -132,9 +135,13 @@ export class DashboardServer {
   private startedAt = Date.now();
   private boundUrl = '';
   private snapshotOptions: SnapshotOptions;
+  private agentControl: AgentControl;
 
   constructor(options: DashboardServerOptions = {}) {
     this.options = options;
+    this.agentControl = options.agentControl ?? new AgentControl({
+      tombstonePath: options.tombstonePath,
+    });
     this.snapshotOptions = {
       dbPath: options.dbPath,
       tombstonePath: options.tombstonePath,
@@ -143,6 +150,7 @@ export class DashboardServer {
       now: options.now,
       probeTimeoutMs: options.probeTimeoutMs,
       fetchImpl: options.fetchImpl,
+      inference: options.inference,
     };
   }
 
@@ -208,14 +216,44 @@ export class DashboardServer {
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+    const isControlRoute = url.pathname === '/api/agent/start' || url.pathname === '/api/agent/stop';
 
-    if (req.method !== 'GET') {
+    if ((isControlRoute && req.method !== 'GET' && req.method !== 'POST') || (!isControlRoute && req.method !== 'GET')) {
+      res.setHeader('Allow', isControlRoute ? 'GET, POST' : 'GET');
       this.sendJson(res, 405, { error: 'MethodNotAllowed' });
       return;
     }
 
     if (!this.authorized(req, url)) {
       this.sendJson(res, 401, { error: 'Unauthorized' });
+      return;
+    }
+
+    if (isControlRoute && req.method === 'POST') {
+      const body = await this.readJsonBody(req);
+      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 0) {
+        this.sendJson(res, 400, { error: 'InvalidRequest' });
+        return;
+      }
+      if (url.pathname === '/api/agent/start') {
+        const result = await this.agentControl.start();
+        if (result.error === 'Permadeath') {
+          this.sendJson(res, 409, { error: 'Permadeath' });
+          return;
+        }
+        if (result.error === 'AlreadyRunning') {
+          this.sendJson(res, 409, { error: 'AlreadyRunning' });
+          return;
+        }
+        if (result.state !== 'running') {
+          this.sendJson(res, 500, { error: 'AgentStartFailed', reason: result.error ?? 'Unknown' });
+          return;
+        }
+        this.sendJson(res, 200, { state: 'running' });
+        return;
+      }
+      const result = await this.agentControl.stop();
+      this.sendJson(res, 200, { state: result.state });
       return;
     }
 
@@ -255,9 +293,23 @@ export class DashboardServer {
     return url.searchParams.get('token') === token;
   }
 
+  private async readJsonBody(req: http.IncomingMessage): Promise<unknown> {
+    let raw = '';
+    for await (const chunk of req) {
+      raw += String(chunk);
+      if (raw.length > 4096) return null;
+    }
+    try {
+      return JSON.parse(raw || '{}');
+    } catch {
+      return null;
+    }
+  }
+
   private async route(url: URL): Promise<QueryResult> {
     switch (url.pathname) {
       case '/api/snapshot':
+        this.state.control = this.agentControl.snapshot();
         return { status: 200, body: await buildSnapshot(this.state, this.snapshotOptions) };
       case '/api/actions':
         return this.actions(url);
@@ -588,6 +640,7 @@ export class DashboardServer {
       if (closed || sending) return;
       sending = true;
       try {
+        this.state.control = this.agentControl.snapshot();
         const snapshot = await buildSnapshot(this.state, this.snapshotOptions);
         if (closed) return;
         res.write(`id: ${snapshot.seq}\nevent: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);

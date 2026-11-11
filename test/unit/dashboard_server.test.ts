@@ -64,6 +64,19 @@ function makeConfig(): AppConfig {
     x402: { port: 4020, priceUsdc: 0.01, settlementChain: 'base' },
     bounties: { githubToken: 'GITHUB-TOKEN-SECRET-VALUE', minRewardUsd: 10 },
     evolution: { mitosisMultiplier: 3, royaltyPercentage: 5 },
+    inference: {
+      mode: 'free',
+      capPerTick: 5,
+      providers: [
+        {
+          id: 'ollama',
+          type: 'ollama',
+          baseUrl: 'http://localhost:11434',
+          model: 'llama3',
+          free: true,
+        },
+      ],
+    },
     mock: { useMockApis: true, initialBalanceUsd: 75, simulateErrors: false },
   };
 }

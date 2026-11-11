@@ -18,6 +18,9 @@ data/
 
 # Permadeath Snapshot (runtime output)
 tombstone.json
+.agent.pid
+.agent.pid.lock
+.agent.stop
 
 # Agent Teamwork Metadata (protects agent memory from git rollbacks)
 .agents/teamwork/

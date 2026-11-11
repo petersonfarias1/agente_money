@@ -1150,6 +1150,9 @@ export function createChildSpawnConfig(
       mitosisMultiplier: parentConfig.evolution.mitosisMultiplier,
       royaltyPercentage: CONSTITUTIONAL_ROYALTY_PERCENTAGE,
     },
+    inference: {
+      ...parentConfig.inference,
+    },
     mock: {
       ...parentConfig.mock,
       initialBalanceUsd: 50.0,

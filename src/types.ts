@@ -28,6 +28,10 @@ export type MetabolicTier = 'VERDE' | 'AMARELO' | 'LARANJA' | 'VERMELHO';
 
 export type ModelClass = 'advanced' | 'economic' | 'survival';
 
+export type InferenceMode = 'free' | 'paid';
+
+export type InferenceProviderType = 'ollama' | 'openai';
+
 export type LedgerEntryType =
   | 'INCOME_X402'
   | 'INCOME_POLYMARKET'
@@ -60,6 +64,21 @@ export interface NetworkConfig {
   baseUsdcAddress: string;
   polygonUsdcAddress: string;
   isMock: boolean;
+}
+
+export interface InferenceProviderConfig {
+  id: string;
+  type: InferenceProviderType;
+  baseUrl: string;
+  apiKey?: string;
+  model: string;
+  free: boolean;
+}
+
+export interface InferenceConfig {
+  mode: InferenceMode;
+  capPerTick: number;
+  providers: InferenceProviderConfig[];
 }
 
 export interface AppConfig {
@@ -104,6 +123,7 @@ export interface AppConfig {
     mitosisMultiplier: number;
     royaltyPercentage: number;
   };
+  inference: InferenceConfig;
   mock: {
     useMockApis: boolean;
     initialBalanceUsd: number;

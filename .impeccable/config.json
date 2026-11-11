@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "flat-type-hierarchy",
+        "value": "*",
+        "files": [
+          "src/modules/dashboard/public/index.html"
+        ],
+        "createdAt": "2026-11-11T01:19:16.839Z",
+        "reason": "Repo design system evidence: .view-head h1 is 21px, body is 14px, and .view-sub is 12.5px, so the heading-to-body ratios exceed 1.25; the flat-hierarchy detector is a false positive on this screen."
+      }
+    ]
+  }
+}

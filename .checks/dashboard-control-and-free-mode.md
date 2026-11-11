@@ -34,6 +34,7 @@ Toca `src/modules/dashboard/*` (rotas de controlo, estado em ficheiro de process
 | Gatilho reativo | proposta só sobre ação de falha nova na trilha, uma por falha distinta, nenhuma enquanto se repetir sem tick bom | exploração agendada — pagaria build + 612 testes por tick sem nada a reparar |
 | Pré-condição do portão | prova de sujeira só-da-proposta **antes** de `validateModification`; portão nunca corre com sujeira alheia | correr o portão sempre — `reset --hard` + `clean -fd` levaria trabalho não commitado |
 | Hooks também no stop | hooks registados correm na paragem graciosa, como já correm em `executePermadeath` | desligar só no permadeath — o paywall ficaria no ar depois de um stop normal |
+| Reserva e paragem cooperativa | `.agent.pid` na raiz contém somente o PID decimal; `.agent.lock` usa criação exclusiva para serializar starts; `.agent.stop` é um pedido cooperativo consumido pelo daemon após o tick atual; o daemon remove os marcadores ao sair | matar o PID ou enviar sinal — interromperia o tick em curso; colocar estado transitório no SQLite — quebraria a fronteira de leitura |
 
 - Nothing else in this change is hard to reverse.
 
