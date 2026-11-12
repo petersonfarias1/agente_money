@@ -651,3 +651,64 @@ describe('Mission Control server', () => {
     assert.equal(second.body.activity.recentActions[0].actionType, 'CONCURRENT_WRITER');
   });
 });
+
+describe('Mission Control server — agent start contract', () => {
+  function stubControl(result: { state: string; pid: number | null; error?: string }) {
+    const calls: unknown[] = [];
+    const control = {
+      calls,
+      snapshot: () => ({ state: 'stopped', pid: null }),
+      start: async (options: unknown) => { calls.push(options); return result; },
+      stop: async () => ({ state: 'stopped', pid: null }),
+    };
+    return control;
+  }
+
+  async function postStart(base: string, body: unknown): Promise<{ status: number; body: any }> {
+    const response = await fetch(`${base}/api/agent/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return { status: response.status, body: await response.json() };
+  }
+
+  it('POST /api/agent/start forwards an explicit inference mode to the control', async () => {
+    const { dir, dbPath } = createDb();
+    const control = stubControl({ state: 'running', pid: 4321 });
+    const { base } = await startServer({
+      dbPath, tombstonePath: path.join(dir, 'none.json'), x402HealthUrl: null, agentControl: control as never,
+    });
+
+    const response = await postStart(base, { mode: 'paid' });
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.body, { state: 'running' });
+    assert.deepEqual(control.calls, [{ mode: 'paid' }]);
+
+    assert.equal((await postStart(base, {})).status, 200);
+    assert.deepEqual(control.calls[1], {});
+  });
+
+  it('POST /api/agent/start rejects an unknown mode or extra keys with 400 without starting', async () => {
+    const { dir, dbPath } = createDb();
+    const control = stubControl({ state: 'running', pid: 4321 });
+    const { base } = await startServer({
+      dbPath, tombstonePath: path.join(dir, 'none.json'), x402HealthUrl: null, agentControl: control as never,
+    });
+
+    assert.deepEqual(await postStart(base, { mode: 'turbo' }), { status: 400, body: { error: 'InvalidRequest' } });
+    assert.deepEqual(await postStart(base, { mode: 'free', extra: 1 }), { status: 400, body: { error: 'InvalidRequest' } });
+    assert.equal(control.calls.length, 0);
+  });
+
+  it('POST /api/agent/start answers 500 AgentStartFailed with the refusal reason', async () => {
+    const { dir, dbPath } = createDb();
+    const reason = 'NoLLMAvailable: free — no free provider configured';
+    const control = stubControl({ state: 'stopped', pid: null, error: reason });
+    const { base } = await startServer({
+      dbPath, tombstonePath: path.join(dir, 'none.json'), x402HealthUrl: null, agentControl: control as never,
+    });
+
+    assert.deepEqual(await postStart(base, {}), { status: 500, body: { error: 'AgentStartFailed', reason } });
+  });
+});

@@ -19,6 +19,8 @@
     "setup:testnet": "node scripts/setup-testnet.js",
     "wallet:status": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/check-balances.js",
     "start": "node --experimental-strip-types --no-warnings=ExperimentalWarning src/index.ts",
+    "start:free": "node scripts/start.js free",
+    "start:paid": "node scripts/start.js paid",
     "dashboard": "node --experimental-strip-types --no-warnings=ExperimentalWarning src/modules/dashboard/main.ts"
   },
   "dependencies": {

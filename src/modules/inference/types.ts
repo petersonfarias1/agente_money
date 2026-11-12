@@ -85,7 +85,10 @@ export interface InferenceExpenseEvent {
 }
 
 export interface InferenceStatusEvent {
+  /** Effective mode for the current tick. */
   mode: InferenceMode;
+  /** Operator-configured ceiling (AD-003). */
+  ceilingMode: InferenceMode;
   providerId: string | null;
   providerModel: string | null;
   callsUsed: number;
@@ -103,6 +106,8 @@ export interface InferenceProvider {
   readonly apiKey?: string;
   estimate(request: InferenceRequest): Promise<InferenceEstimate>;
   evaluateBounty?(request: BountyInferenceRequest): Promise<InferenceScoreEstimate>;
+  /** Minimal liveness call used by the startup preflight; throws when unavailable. */
+  ping?(timeoutMs: number): Promise<void>;
 }
 
 export interface InferenceEngineOptions {

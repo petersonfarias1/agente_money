@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import type {
   AppConfig,
+  InferenceMode,
   MetabolicTier,
   WalletClient,
 } from './types.ts';
@@ -25,7 +26,8 @@ import { evaluateTier } from './core/metabolism.ts';
 import { executePermadeath, registerTeardownHook } from './core/death.ts';
 import { InferenceEngine } from './modules/inference/engine.ts';
 import { createInferenceProvider } from './modules/inference/provider.ts';
-import type { InferenceEngineOptions } from './modules/inference/types.ts';
+import type { InferenceEngineOptions, InferenceProvider } from './modules/inference/types.ts';
+import { NoLLMAvailableError, runInferencePreflight, type PreflightResult } from './modules/inference/preflight.ts';
 import { defaultProbabilityEstimator, PolymarketScanner } from './modules/polymarket/scanner.ts';
 import { X402Server } from './modules/micropayments/server.ts';
 import { executeMitosisLifecycleTick } from './evolution/mitosis.ts';
@@ -59,6 +61,8 @@ export interface HeartbeatDaemonOptions {
   intervalOverrideMs?: number;
   autoStart?: boolean;
   inference?: InferenceEngine;
+  /** Provider queue already vetted by the startup preflight (overrides config). */
+  inferenceProviders?: InferenceProvider[];
   immuneProposalGenerator?: (failure: string) => Promise<ModificationProposal | null>;
   onTickExecuted?: (result: TickResult) => Promise<void> | void;
 }
@@ -93,7 +97,7 @@ export class HeartbeatDaemon {
     this.inference = options?.inference ?? new InferenceEngine({
       mode: this.config.inference.mode,
       capPerTick: this.config.inference.capPerTick,
-      providers: this.config.inference.providers.map(
+      providers: options?.inferenceProviders ?? this.config.inference.providers.map(
         (providerConfig) => createInferenceProvider(providerConfig)
       ),
       fallback: defaultProbabilityEstimator,
@@ -223,7 +227,8 @@ export class HeartbeatDaemon {
   }
 
   private recordInferenceStatus(event: {
-    mode: 'free' | 'paid';
+    mode: InferenceMode;
+    ceilingMode: InferenceMode;
     providerId: string | null;
     providerModel: string | null;
     callsUsed: number;
@@ -242,6 +247,25 @@ export class HeartbeatDaemon {
         timestamp: Date.now(),
       });
     } catch { /* inference must continue if status persistence is unavailable */ }
+  }
+
+  /** Records the tier-driven step down (or restore) of the inference mode (AD-003). */
+  private recordInferenceModeChange(
+    transition: { from: InferenceMode; to: InferenceMode },
+    tier: MetabolicTier,
+    balanceUsd: number
+  ): void {
+    if (!this.database?.isOpen()) return;
+    try {
+      this.database.recordAction({
+        component: 'inference',
+        actionType: transition.to === 'free' ? 'INFERENCE_MODE_DOWNGRADED' : 'INFERENCE_MODE_RESTORED',
+        details: JSON.stringify({ ...transition, ceilingMode: this.inference?.ceilingMode ?? transition.from, tier }),
+        tier,
+        balanceUsd,
+        timestamp: Date.now(),
+      });
+    } catch { /* the engine already switched; persistence is best effort */ }
   }
 
   private recordInferenceInvalidScore(event: { value: unknown; providerId?: string; taskId: string }): void {
@@ -279,6 +303,9 @@ export class HeartbeatDaemon {
       // 2. Metabolic Tier Evaluation
       const tierStatus = evaluateTier(balanceUsd);
       this.currentTier = tierStatus.tier;
+      // 2.1 The tier can only step the inference mode down from the ceiling (AD-003).
+      const modeChange = this.inference?.applyTier(tierStatus.tier) ?? null;
+      if (modeChange) this.recordInferenceModeChange(modeChange, tierStatus.tier, balanceUsd);
 
       // 3. SQLite Audit Record
       if (this.database && this.database.isOpen()) {
@@ -573,13 +600,159 @@ export function registerSignalHandlers(daemon: HeartbeatDaemon): void {
   process.once('SIGTERM', () => onSignal('SIGTERM'));
 }
 
+/** Exit code used when the agent refuses to start (EX_CONFIG). */
+export const START_REFUSED_EXIT_CODE = 78;
+
+export interface BootstrapDeps {
+  config?: AppConfig;
+  database?: DatabaseService;
+  providers?: InferenceProvider[];
+  preflightTimeoutMs?: number;
+  /** IPC channel to the dashboard controller (defaults to process.send). */
+  send?: (message: unknown, callback?: () => void) => void;
+  exit?: (code: number) => void;
+  log?: (message: string) => void;
+  createDaemon?: (options: HeartbeatDaemonOptions) => HeartbeatDaemon;
+}
+
+function recordStartupAction(
+  database: DatabaseService | undefined,
+  actionType: string,
+  details: unknown
+): void {
+  if (!database?.isOpen()) return;
+  try {
+    database.recordAction({
+      component: 'inference',
+      actionType,
+      details: JSON.stringify(details),
+      tier: 'VERDE',
+      balanceUsd: 0,
+      timestamp: Date.now(),
+    });
+  } catch { /* the console and IPC still carry the result */ }
+}
+
+/**
+ * Process entry point: loads configuration, runs the blocking LLM preflight
+ * for the configured inference mode and only then starts the heartbeat.
+ * When no provider answers, the reason is persisted, sent to the dashboard
+ * over IPC, and the process exits with START_REFUSED_EXIT_CODE.
+ */
+export async function bootstrapAgent(deps: BootstrapDeps = {}): Promise<HeartbeatDaemon | null> {
+  const log = deps.log ?? ((message: string) => console.log(message));
+  const send = deps.send ?? (process.send ? process.send.bind(process) as BootstrapDeps['send'] : undefined);
+  const exit = deps.exit ?? ((code: number) => process.exit(code));
+
+  const refuse = (reason: string): null => {
+    log(`[APEX AEA] Start refused: ${reason}`);
+    if (send) {
+      let exited = false;
+      // Never hang if the IPC channel does not acknowledge.
+      const ackTimer = setTimeout(() => done(), 1000);
+      ackTimer.unref?.();
+      const done = () => {
+        if (exited) return;
+        exited = true;
+        clearTimeout(ackTimer);
+        exit(START_REFUSED_EXIT_CODE);
+      };
+      try {
+        send({ type: 'agent-start-failed', reason }, done);
+      } catch {
+        done();
+      }
+    } else {
+      exit(START_REFUSED_EXIT_CODE);
+    }
+    return null;
+  };
+
+  let config: AppConfig;
+  try {
+    config = deps.config ?? getConfig();
+  } catch (error) {
+    return refuse((error as Error).message);
+  }
+
+  let database: DatabaseService | undefined = deps.database;
+  if (!database) {
+    try { database = getDatabase(); } catch { database = undefined; }
+  }
+
+  const providers = deps.providers ?? config.inference.providers.map((providerConfig) =>
+    createInferenceProvider(providerConfig)
+  );
+
+  log(`[APEX AEA] Inference preflight: mode=${config.inference.mode}, providers=${providers.length}`);
+  let preflight: PreflightResult;
+  try {
+    preflight = await runInferencePreflight(providers, config.inference.mode, {
+      timeoutMs: deps.preflightTimeoutMs,
+    });
+  } catch (error) {
+    const reason = (error as Error).message;
+    recordStartupAction(database, 'INFERENCE_PREFLIGHT_FAILED', {
+      mode: config.inference.mode,
+      reason,
+      failed: error instanceof NoLLMAvailableError ? error.failed : [],
+    });
+    return refuse(reason);
+  }
+
+  for (const failure of preflight.failed) {
+    recordStartupAction(database, 'INFERENCE_PROVIDER_UNAVAILABLE', { mode: preflight.mode, ...failure });
+  }
+  recordStartupAction(database, 'INFERENCE_PREFLIGHT_OK', {
+    mode: preflight.mode,
+    passed: preflight.passed,
+    failed: preflight.failed,
+  });
+  log(
+    `[APEX AEA] Inference ready: ${preflight.passed.map((p) => `${p.id}(${p.model})`).join(', ')}` +
+      (preflight.failed.length ? ` | dropped: ${preflight.failed.map((f) => f.id).join(', ')}` : '')
+  );
+
+  // A paid ceiling steps down to free below VERDE (AD-003). The free queue is
+  // vetted too, but only as a warning: it never blocks the start.
+  let stepDownProviders: InferenceProvider[] = [];
+  if (preflight.mode === 'paid') {
+    try {
+      const free = await runInferencePreflight(providers, 'free', { timeoutMs: deps.preflightTimeoutMs });
+      stepDownProviders = free.healthy;
+      recordStartupAction(database, 'INFERENCE_FREE_PREFLIGHT_OK', { mode: 'free', passed: free.passed, failed: free.failed });
+      log(`[APEX AEA] Free step-down ready: ${free.passed.map((p) => p.id).join(', ')}`);
+    } catch (error) {
+      const reason = (error as Error).message;
+      recordStartupAction(database, 'INFERENCE_FREE_PREFLIGHT_FAILED', {
+        mode: 'free',
+        reason,
+        failed: error instanceof NoLLMAvailableError ? error.failed : [],
+      });
+      log(`[APEX AEA] Warning: no free step-down below VERDE (${reason}); AMARELO will use the deterministic estimator`);
+    }
+  }
+
+  const daemonOptions: HeartbeatDaemonOptions = {
+    config,
+    database,
+    inferenceProviders: [...preflight.healthy, ...stepDownProviders],
+    autoStart: true,
+  };
+  const daemon = deps.createDaemon ? deps.createDaemon(daemonOptions) : new HeartbeatDaemon(daemonOptions);
+  registerSignalHandlers(daemon);
+  return daemon;
+}
+
 const isMainModule =
   Boolean(process.argv[1]) &&
   fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 
 if (isMainModule) {
-  const daemon = new HeartbeatDaemon({ autoStart: true });
-  registerSignalHandlers(daemon);
+  bootstrapAgent().catch((error) => {
+    console.error('[APEX AEA] Fatal bootstrap error:', error);
+    process.exit(1);
+  });
 }
 
 // ==============================================================================

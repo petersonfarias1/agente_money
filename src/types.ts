@@ -66,7 +66,15 @@ export interface NetworkConfig {
   isMock: boolean;
 }
 
-export interface InferenceProviderConfig {
+/** Per-token prices used to book EXPENSE_LLM in paid mode. */
+export interface TokenPricing {
+  /** USD per 1M prompt tokens. */
+  priceInPerMTok?: number;
+  /** USD per 1M completion tokens. */
+  priceOutPerMTok?: number;
+}
+
+export interface InferenceProviderConfig extends TokenPricing {
   id: string;
   type: InferenceProviderType;
   baseUrl: string;

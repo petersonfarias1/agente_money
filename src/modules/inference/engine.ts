@@ -7,11 +7,15 @@
  * - the queue is walked in configured order until one provider answers;
  * - the per-tick call cap is enforced before any provider call;
  * - probabilities outside (0, 1) or non-numeric are discarded to the next step;
- * - the deterministic estimator is always the last degrau.
+ * - the deterministic estimator is always the last degrau;
+ * - the configured mode is a ceiling: below VERDE a paid ceiling steps down to
+ *   free (AD-003), and the tier can never raise a free ceiling to paid.
  */
 
 import type {
   BountyTask,
+  InferenceMode,
+  MetabolicTier,
   PolymarketMarket,
 } from '../../types.ts';
 import type {
@@ -29,13 +33,35 @@ export class InferenceEngine {
   private lastSource: 'provider' | 'deterministic' = 'deterministic';
   private lastFallbackReason: string | null = null;
   private readonly options: InferenceEngineOptions;
+  private effectiveMode: InferenceMode;
 
   constructor(options: InferenceEngineOptions) {
     this.options = options;
+    this.effectiveMode = options.mode;
   }
 
-  public get mode(): InferenceEngineOptions['mode'] {
+  /** Mode used for the current tick (may be below the ceiling). */
+  public get mode(): InferenceMode {
+    return this.effectiveMode;
+  }
+
+  /** Mode the operator configured; the tier can only step down from it. */
+  public get ceilingMode(): InferenceMode {
     return this.options.mode;
+  }
+
+  /**
+   * Applies the metabolic tier to the mode for this tick (AD-003): a paid
+   * ceiling stays paid only in VERDE; every other tier walks the free queue.
+   * Returns the transition when the effective mode changed, otherwise null.
+   */
+  public applyTier(tier: MetabolicTier): { from: InferenceMode; to: InferenceMode } | null {
+    const next = modeForTier(this.options.mode, tier);
+    if (next === this.effectiveMode) return null;
+    const transition = { from: this.effectiveMode, to: next };
+    this.effectiveMode = next;
+    this.options.onStatus?.(this.status);
+    return transition;
   }
 
   public get capPerTick(): number {
@@ -49,6 +75,7 @@ export class InferenceEngine {
   public get status() {
     return {
       mode: this.mode,
+      ceilingMode: this.ceilingMode,
       providerId: this.lastProviderId,
       providerModel: this.lastModel,
       callsUsed: this.callsUsed,
@@ -75,7 +102,7 @@ export class InferenceEngine {
    * provider queue in order and degrading to the deterministic estimator.
    */
   public async estimate(market: PolymarketMarket): Promise<InferenceOutcome> {
-    const mode = this.options.mode;
+    const mode = this.mode;
     const candidates = this.options.providers.filter(
       (provider: InferenceProvider) =>
         mode === 'paid' ? !provider.free && Boolean(provider.apiKey) : provider.free
@@ -196,4 +223,9 @@ export class InferenceEngine {
     }
     return fallback('provider-queue-exhausted');
   }
+}
+
+/** Effective inference mode for a tier under the operator's ceiling (AD-003). */
+export function modeForTier(ceiling: InferenceMode, tier: MetabolicTier): InferenceMode {
+  return ceiling === 'paid' && tier === 'VERDE' ? 'paid' : 'free';
 }

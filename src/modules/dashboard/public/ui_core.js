@@ -122,19 +122,6 @@ export function parseSseFrame(frame) {
   return result;
 }
 
-const CRITICAL_ACTIONS = new Set([
-  'PERMADEATH_EXECUTED',
-  'IMMUNE_SYSTEM_ROLLBACK',
-  'TICK_FAILED',
-]);
-const WARNING_ACTIONS = new Set(['REPLAY_ATTACK_PREVENTED', 'DAEMON_STOPPED', 'INFERENCE_FALLBACK']);
-
-export function alertSeverity(actionType) {
-  if (CRITICAL_ACTIONS.has(actionType)) return 'critical';
-  if (WARNING_ACTIONS.has(actionType)) return 'warning';
-  return 'info';
-}
-
 /**
  * `details` is free-form text; valid JSON becomes the parsed value, anything
  * else survives as `{ raw }` so the UI never throws on a bad row.

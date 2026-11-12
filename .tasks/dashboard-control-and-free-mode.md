@@ -10,7 +10,7 @@ O agente só existe com `npm start` aberto num terminal e o painel noutro: não 
 
 Quando isto entregar: quem opera abre só o painel — `start` e `stop` a partir da tela, com instância única, recusa pós-morte e o stop a esperar o tick terminar; o modo de inferência `free`/`paid` é configuração de arranque com fila de provedores, teto fixo de chamadas por tick e o estimador determinístico sempre como último degrau; e o tick despacha os três motores — o paywall arranca com o processo e morre com ele, a mitose é avaliada por tick só em tier Verde, e o agente propõe reparos ao próprio código apenas quando algo falhou, sob o portão imunológico de build e testes. Design em `.design/dashboard-control-and-free-mode.md` — **vinculativo para as telas e contratos**: as tabelas de estado e os códigos das rotas vêm de lá, literalmente.
 
-53 critérios em 7 fatias · 7 portas de sentido único · 2 abertas, 2 bloqueiam a ativação
+61 critérios em 7 fatias (54–57 pela AD-002, 58–61 pela AD-003, 2026-11-12) · 7 portas de sentido único · 1 aberta, 1 bloqueia a ativação
 
 ## Criteria
 
@@ -53,18 +53,32 @@ Quando isto entregar: quem opera abre só o painel — `start` e `stop` a partir
 
 27. Quando o agente arranca com `INFERENCE_MODE=free` e um provedor responde, então o snapshot mostra o modo efetivo `free` com o provedor atual, e o tick não cria nenhum lançamento `EXPENSE_LLM`.
 28. Quando o provedor atual falha — cota, chave ausente ou fora do ar — então a fila avança para o seguinte na ordem configurada e o motivo do salto fica registado como alerta no painel.
-29. Se a fila free toda estiver indisponível, então o tick cai no estimador determinístico e continua, com alerta.
+29. Se, depois de um arranque bem-sucedido, a fila free toda ficar indisponível, então o tick cai no estimador determinístico e continua, com alerta. *(Revisto 2026-11-12, AD-002: no arranque vale o critério 55.)*
 30. Enquanto o contador de chamadas do tick atinge `INFERENCE_CAP_PER_TICK` (default `5`), então nenhuma chamada adicional é feita no resto do tick, o resto usa o determinístico sem erro e o contador fica visível no snapshot.
-31. Quando o agente arranca com `INFERENCE_MODE=paid` e as chaves estão presentes, então o snapshot mostra o modo efetivo `paid`; quando o provedor reporta custo, o valor é registado como despesa, e sem número reportado nenhum lançamento é inventado.
-32. Quando em modo `paid` falta chave ou cota, então a fila cai no determinístico com alerta — degradação observável, nunca paragem.
+31. Quando o agente arranca com `INFERENCE_MODE=paid` e as chaves estão presentes, então o snapshot mostra o modo efetivo `paid`; a despesa é o custo reportado pelo provedor ou, na falta dele, os tokens reportados × preços por 1M tokens do `.env`; sem divisão de tokens ou sem preço, nenhum lançamento é inventado. *(Revisto 2026-11-12, AD-002.)*
+32. Quando, depois de um arranque bem-sucedido, o modo `paid` perde chave ou cota, então a fila cai no determinístico com alerta — degradação observável, nunca paragem a meio da operação. *(Revisto 2026-11-12, AD-002: no arranque vale o critério 55.)*
 33. Quando `INFERENCE_MODE` é trocado no `.env`, então o efeito só aparece no próximo arranque do agente e o painel mostra o modo efetivo, não o pretendido.
 34. Quando uma probabilidade devolvida fora de `(0, 1)` ou não numérica, então é descartada, o degrau seguinte da fila é usado e o valor rejeitado fica registado.
 35. Se `INFERENCE_MODE` não for `free` nem `paid`, ou `INFERENCE_CAP_PER_TICK` não for um inteiro positivo, então o arranque falha com `Invalid INFERENCE_MODE` ou `Invalid INFERENCE_CAP_PER_TICK`, como os outros valores de configuração já fazem.
 
+### Preflight de LLM no arranque *(acrescentado 2026-11-12, AD-002)*
+
+54. Quando o agente arranca, então todos os provedores do modo são pingados em paralelo; os que falham saem da fila nesse arranque e cada um fica registado como `INFERENCE_PROVIDER_UNAVAILABLE`, e o resultado como `INFERENCE_PREFLIGHT_OK`.
+55. Se nenhum provedor do modo estiver configurado ou responder ao preflight, então o arranque é recusado com `NoLLMAvailable`, o processo sai com `78`, o motivo é registado como `INFERENCE_PREFLIGHT_FAILED` e enviado ao painel, e `POST /api/agent/start` responde `500 { error: "AgentStartFailed", reason }`.
+56. Quando `POST /api/agent/start` recebe `{ mode: "free" | "paid" }`, então esse modo sobrepõe `INFERENCE_MODE` só para esse arranque; qualquer outro valor ou chave responde `400 InvalidRequest` sem criar processo.
+57. Dado `INFERENCE_PROVIDERS` vazio, então a fila do modo é montada a partir das chaves do `.env` na ordem de `INFERENCE_FREE_ORDER` / `INFERENCE_PAID_ORDER`; chaves vazias ou de modelo (`mock-…`, `change-me`, `your-…`) contam como ausentes e o Ollama só entra com `OLLAMA_BASE_URL`.
+
+### Teto de modo por tier *(acrescentado 2026-11-12, AD-003)*
+
+58. Dado teto `paid`, quando o tier do tick é VERDE então a fila paga é usada; quando é AMARELO, LARANJA ou VERMELHO então só a fila free é percorrida e nenhum `EXPENSE_LLM` é lançado. Dado teto `free`, nenhum tier chama um provedor pago.
+59. Dado teto `paid` e `INFERENCE_PROVIDERS` vazio, então a fila do agente leva a fila paga seguida da fila free, ambas montadas pelas chaves do `.env`.
+60. Quando o modo efetivo muda entre ticks, então fica registado `INFERENCE_MODE_DOWNGRADED` (para free) ou `INFERENCE_MODE_RESTORED` (de volta ao pago) com `{ from, to, ceilingMode, tier }`; o rebaixamento é alerta de aviso e o snapshot expõe `inference.mode` (efetivo) e `inference.ceilingMode`.
+61. Dado teto `paid`, quando o preflight pago passa então a fila free também é pingada: se passar fica `INFERENCE_FREE_PREFLIGHT_OK` e os provedores free vão para o daemon; se falhar fica `INFERENCE_FREE_PREFLIGHT_FAILED` (aviso) e o arranque continua — abaixo de VERDE o tick usa o determinístico.
+
 ### Estimador Polymarket
 
 36. Dado um candidato dentro do teto, então `estimatedProb` vem do modelo e alimenta o edge e o Quarter-Kelly.
-37. Dado um candidato fora do teto ou nenhum provedor configurado, então o estimador determinístico de hoje é usado e o comportamento é idêntico ao atual.
+37. Dado um candidato fora do teto, então o estimador determinístico de hoje é usado e o comportamento é idêntico ao atual. *(Revisto 2026-11-12, AD-002: sem provedor configurado o agente não arranca — critério 55.)*
 38. Se a fila de provedores ficar indisponível no meio da varredura, então o degrau seguinte ou o determinístico responde sem travar o tick, com alerta.
 
 ### Avaliador de Bounties
@@ -179,7 +193,7 @@ stateDiagram-v2
 
 | Route | In | Out | Status | Criteria |
 |---|---|---|---|---|
-| `POST /api/agent/start` | `{}` | `{ state }` | `200`, `409`, `401` | 2, 4, 5, 6 |
+| `POST /api/agent/start` | `{}` ou `{ mode: "free" \| "paid" }` | `{ state }`; `{ error, reason }` | `200`, `400`, `409`, `500`, `401` | 2, 4, 5, 6, 55, 56 |
 | `POST /api/agent/stop` | `{}` | `{ state }` | `200`, `401` | 7, 9, 10, 11 |
 | `GET /api/snapshot` e `GET /api/stream` | — | + estado de controlo, modo efetivo de inferência, contador de chamadas do tick | `200` | 17, 27, 30, 31 |
 | demais `GET` do painel | — | inalterados | `200`, `405` (`Allow: GET`) | 16 |
@@ -202,5 +216,5 @@ This task is the record of decision. If a linked document diverges, ask before b
 
 | # | Kind | Question | Until answered |
 |---|---|---|---|
-| 1 | blocks go-live | Que provedor free entra na fila do modo `free`? A busca externa estava indisponível e nenhum teto de cota é fato neste documento. | Fila vazia documentada no `.env.example`; sem provedor o tick usa o determinístico — os critérios 27/36 provam-se com um provedor de teste, mas o modo free real só liga depois desta resposta. |
+| 1 | ~~blocks go-live~~ resolved 2026-11-12 | Que provedor free entra na fila do modo `free`? | Resolvido pelo autor (AD-002): fila montada pelas chaves do `.env` em `openrouter, groq, gemini, ollama` — ver critério 57. Os tetos de cota continuam por medir no primeiro tick real. |
 | 2 | blocks go-live | Uma proposta gerada por modelo passa o portão de build e suíte completa? | Até lá o ciclo reativo só prova o caminho de recusa; a parada é três falhas distintas, cada uma com o resultado registado na trilha. |

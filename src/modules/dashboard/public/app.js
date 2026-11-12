@@ -177,28 +177,33 @@ function renderControl(control = {}) {
   const badge = el('agent-control-state');
   const start = el('agent-start');
   const stop = el('agent-stop');
+  const modeSelect = el('agent-mode');
   if (!badge || !start || !stop) return;
   badge.dataset.state = state;
   badge.textContent = model.label;
   start.disabled = !model.startEnabled;
   stop.disabled = !model.stopEnabled;
+  if (modeSelect) {
+    modeSelect.disabled = !model.startEnabled;
+  }
 }
 
-async function postControl(action) {
+async function postControl(action, payload = {}) {
   const response = await fetch(apiUrl(`/api/agent/${action}`), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}),
     },
-    body: '{}',
+    body: JSON.stringify(payload),
     cache: 'no-store',
   });
   const body = await response.json();
   if (!response.ok) {
-    const error = new Error(body.error ?? `HTTP ${response.status}`);
+    const error = new Error(body.reason ?? body.error ?? `HTTP ${response.status}`);
     error.status = response.status;
     error.code = body.error;
+    error.reason = body.reason;
     throw error;
   }
   return body;
@@ -207,10 +212,13 @@ async function postControl(action) {
 async function changeAgentState(action) {
   const start = el('agent-start');
   const stop = el('agent-stop');
+  const modeSelect = el('agent-mode');
   start.disabled = true;
   stop.disabled = true;
+  if (modeSelect) modeSelect.disabled = true;
   try {
-    await postControl(action);
+    const payload = action === 'start' && modeSelect ? { mode: modeSelect.value } : {};
+    await postControl(action, payload);
   } catch (error) {
     const label = error.code === 'Permadeath'
       ? 'agente encerrado por permadeath'
@@ -520,14 +528,30 @@ function renderModels(data) {
   el('model-research').textContent = tier ? (tier.allowSpeculativeResearch ? 'liberada' : 'bloqueada') : '—';
   el('model-modification').textContent = tier ? (tier.allowSelfModification ? 'liberada' : 'bloqueada') : '—';
   el('model-reason').textContent = tier?.reason ?? '—';
-  el('inference-mode').textContent = inference.mode ?? '—';
+  const steppedDown = inference.ceilingMode && inference.mode && inference.ceilingMode !== inference.mode;
+  el('inference-mode').textContent = steppedDown
+    ? `${inference.mode} (teto ${inference.ceilingMode}, rebaixado pelo tier)`
+    : (inference.mode ?? '—');
+  el('inference-mode').classList.toggle('tag-warn', Boolean(steppedDown));
   el('inference-provider').textContent = inference.providerId
     ? `${inference.providerId}${inference.providerModel ? ` · ${inference.providerModel}` : ''}`
     : 'nenhum';
   el('inference-calls').textContent = `${Number(inference.callsUsed ?? 0)} / ${Number(inference.capPerTick ?? 0)}`;
   el('inference-source').textContent = inference.source === 'provider' ? 'provedor' : 'determinística';
+  const preflightEl = el('inference-preflight');
+  if (preflightEl) {
+    const preflight = data.inferencePreflight;
+    if (!preflight) {
+      preflightEl.textContent = '—';
+    } else if (preflight.ok) {
+      const summary = preflight.passed?.map((provider) => provider.id).join(', ') || 'ok';
+      preflightEl.textContent = `aprovado (${summary})`;
+    } else {
+      preflightEl.textContent = `falhou (${preflight.reason ?? 'indisponível'})`;
+    }
+  }
   const providerState = el('inference-provider-state');
-  providerState.textContent = inference.providerId ? 'provedor configurado' : 'inferência determinística';
+  providerState.textContent = inference.providerId ? 'provedor configurado' : 'sem provedor de inferência configurado';
   providerState.classList.toggle('tag-warn', !inference.providerId);
   const operations = tier?.operations ?? [];
   el('model-operations').innerHTML = operations

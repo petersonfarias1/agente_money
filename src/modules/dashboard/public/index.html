@@ -72,6 +72,10 @@
             </div>
             <div class="view-actions">
               <span id="agent-control-state" class="tag" data-state="stopped">stopped</span>
+              <select id="agent-mode" class="mode-select" aria-label="Modo de inferência ao iniciar">
+                <option value="free">Free</option>
+                <option value="paid">Pago</option>
+              </select>
               <button id="agent-start" class="button primary" type="button">Iniciar agente</button>
               <button id="agent-stop" class="button ghost" type="button" disabled>Parar agente</button>
               <a id="export-snapshot" class="button ghost" href="/api/export?table=actions&amp;format=json" download>Exportar ações</a>
@@ -281,7 +285,7 @@
               <h1>Modelos</h1>
               <p class="view-sub">A classe de modelo que o tier atual libera.</p>
             </div>
-            <span id="inference-provider-state" class="tag tag-warn">inferência determinística</span>
+            <span id="inference-provider-state" class="tag tag-warn">sem provedor de inferência configurado</span>
           </div>
 
           <div class="split">
@@ -297,6 +301,7 @@
                   <div><dt>Provedor ativo</dt><dd id="inference-provider">—</dd></div>
                   <div><dt>Chamadas neste tick</dt><dd id="inference-calls">—</dd></div>
                   <div><dt>Origem da estimativa</dt><dd id="inference-source">—</dd></div>
+                  <div><dt>Preflight de LLM</dt><dd id="inference-preflight">—</dd></div>
                   <div><dt>Intervalo de heartbeat</dt><dd id="model-interval">—</dd></div>
                   <div><dt>Pesquisa especulativa</dt><dd id="model-research">—</dd></div>
                   <div><dt>Automodificação</dt><dd id="model-modification">—</dd></div>

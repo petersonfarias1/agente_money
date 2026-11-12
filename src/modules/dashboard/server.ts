@@ -11,7 +11,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { AppConfig, LedgerEntryType, PositionStatus, SupportedChain } from '../../types.ts';
+import type { AppConfig, InferenceMode, LedgerEntryType, PositionStatus, SupportedChain } from '../../types.ts';
 import {
   DatabaseUnavailableError,
   buildSnapshot,
@@ -23,6 +23,10 @@ import {
 } from './snapshot.ts';
 import type { SnapshotOptions, SnapshotState } from './snapshot.ts';
 import { AgentControl } from './agent_control.ts';
+
+function isInferenceMode(value: unknown): value is InferenceMode {
+  return value === 'free' || value === 'paid';
+}
 
 const PUBLIC_DIR = fileURLToPath(new URL('./public/', import.meta.url));
 
@@ -231,12 +235,21 @@ export class DashboardServer {
 
     if (isControlRoute && req.method === 'POST') {
       const body = await this.readJsonBody(req);
-      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 0) {
+      const isStart = url.pathname === '/api/agent/start';
+      const record = body as Record<string, unknown> | null;
+      const keys = record && typeof record === 'object' && !Array.isArray(record) ? Object.keys(record) : null;
+      const validBody =
+        keys !== null &&
+        (isStart
+          ? keys.every((key) => key === 'mode') && (record!.mode === undefined || isInferenceMode(record!.mode))
+          : keys.length === 0);
+      if (!validBody) {
         this.sendJson(res, 400, { error: 'InvalidRequest' });
         return;
       }
-      if (url.pathname === '/api/agent/start') {
-        const result = await this.agentControl.start();
+      if (isStart) {
+        const mode = record!.mode as InferenceMode | undefined;
+        const result = await this.agentControl.start(mode ? { mode } : {});
         if (result.error === 'Permadeath') {
           this.sendJson(res, 409, { error: 'Permadeath' });
           return;

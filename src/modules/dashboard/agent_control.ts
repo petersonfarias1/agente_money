@@ -2,6 +2,7 @@ import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { InferenceMode } from '../../types.ts';
 
 export type AgentControlState = 'stopped' | 'starting' | 'running' | 'stopping' | 'unknown';
 
@@ -9,6 +10,11 @@ export interface AgentControlSnapshot {
   state: AgentControlState;
   pid: number | null;
   error?: string;
+}
+
+export interface AgentStartOptions {
+  /** Forces INFERENCE_MODE for the spawned agent; omitted means the .env value. */
+  mode?: InferenceMode;
 }
 
 interface SpawnedAgent {
@@ -135,17 +141,17 @@ export class AgentControl {
     return { state: 'stopped', pid: null, error: this.error };
   }
 
-  start(): Promise<AgentControlSnapshot> {
+  start(options: AgentStartOptions = {}): Promise<AgentControlSnapshot> {
     if (this.startPromise) {
       return Promise.resolve({ state: 'starting', pid: this.pid, error: 'AlreadyRunning' });
     }
-    this.startPromise = this.startExclusive().finally(() => {
+    this.startPromise = this.startExclusive(options).finally(() => {
       this.startPromise = null;
     });
     return this.startPromise;
   }
 
-  private async startExclusive(): Promise<AgentControlSnapshot> {
+  private async startExclusive(options: AgentStartOptions): Promise<AgentControlSnapshot> {
     if (fs.existsSync(this.tombstonePath)) return { state: 'stopped', pid: null, error: 'Permadeath' };
     const current = this.snapshot();
     if (current.state === 'running' || current.state === 'starting' || current.state === 'stopping') {
@@ -165,7 +171,12 @@ export class AgentControl {
       this.error = undefined;
       const child = this.spawnAgent({
         cwd: this.rootDir,
-        env: { ...process.env, AGENT_CONTROL_FILE: this.processFile, AGENT_STOP_FILE: this.stopFile },
+        env: {
+          ...process.env,
+          AGENT_CONTROL_FILE: this.processFile,
+          AGENT_STOP_FILE: this.stopFile,
+          ...(options.mode ? { INFERENCE_MODE: options.mode } : {}),
+        },
       });
       if (!child.pid || !Number.isSafeInteger(child.pid) || child.pid < 1) {
         throw new Error('Spawn returned an invalid pid');
@@ -175,6 +186,7 @@ export class AgentControl {
       child.unref();
       await new Promise<void>((resolve, reject) => {
         let settled = false;
+        let refusedReason: string | undefined;
         const finish = (error?: Error) => {
           if (settled) return;
           settled = true;
@@ -183,10 +195,19 @@ export class AgentControl {
         };
         const timer = setTimeout(() => finish(new Error('Agent startup confirmation timed out')), this.startTimeoutMs);
         child.on('message', (message: unknown) => {
-          if (message === 'agent-ready') finish();
+          if (message === 'agent-ready') {
+            finish();
+            return;
+          }
+          const record = message as { type?: unknown; reason?: unknown } | null;
+          if (record && typeof record === 'object' && record.type === 'agent-start-failed') {
+            refusedReason = typeof record.reason === 'string' && record.reason ? record.reason : 'Agent refused to start';
+          }
         });
         child.once('error', (error: Error) => finish(error));
-        child.once('exit', (code: number | null) => finish(new Error(`Agent exited before confirmation (${code ?? 'signal'})`)));
+        child.once('exit', (code: number | null) =>
+          finish(new Error(refusedReason ?? `Agent exited before confirmation (${code ?? 'signal'})`))
+        );
       });
       this.state = fs.existsSync(this.stopFile) ? 'stopping' : 'running';
       return { state: this.state, pid: this.pid };

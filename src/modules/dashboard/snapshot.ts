@@ -13,12 +13,23 @@ import type { AppConfig, InferenceMode, ModelClass, MetabolicTier, TierStatus } 
 import { getConfig } from '../../config.ts';
 import { evaluateTier } from '../../core/metabolism.ts';
 import type { AgentControlSnapshot } from './agent_control.ts';
+import type { PreflightProviderFailure, PreflightProviderPass } from '../inference/preflight.ts';
 
 // ==============================================================================
 // Types
 // ==============================================================================
 
 export type LivenessState = 'ALIVE' | 'STALE' | 'DEAD' | 'UNKNOWN';
+
+/** Latest startup preflight outcome, read back from the audit trail. */
+export interface InferencePreflightSnapshot {
+  ok: boolean;
+  at: number;
+  mode: string | null;
+  reason: string | null;
+  passed: PreflightProviderPass[];
+  failed: PreflightProviderFailure[];
+}
 
 export interface SnapshotState {
   seq: number;
@@ -70,7 +81,10 @@ export interface Liveness {
 }
 
 export interface MissionControlInferenceView {
+  /** Effective mode of the last tick. */
   mode: InferenceMode;
+  /** Operator-configured ceiling; differs from `mode` while stepped down (AD-003). */
+  ceilingMode: InferenceMode;
   providerId: string | null;
   providerModel: string | null;
   callsUsed: number;
@@ -198,21 +212,25 @@ export function deriveLiveness(input: {
 // Pure derivations
 // ==============================================================================
 
+/** Single source of alert severity; the SPA renders `alert.severity` from the snapshot. */
+const CRITICAL_ACTIONS: ReadonlySet<string> = new Set([
+  'PERMADEATH_EXECUTED',
+  'IMMUNE_SYSTEM_ROLLBACK',
+  'TICK_FAILED',
+  'INFERENCE_PREFLIGHT_FAILED',
+]);
+const WARNING_ACTIONS: ReadonlySet<string> = new Set([
+  'REPLAY_ATTACK_PREVENTED',
+  'DAEMON_STOPPED',
+  'INFERENCE_FALLBACK',
+  'INFERENCE_PROVIDER_UNAVAILABLE',
+  'INFERENCE_MODE_DOWNGRADED',
+  'INFERENCE_FREE_PREFLIGHT_FAILED',
+]);
+
 export function alertSeverity(actionType: string): 'critical' | 'warning' | 'info' {
-  if (
-    actionType === 'PERMADEATH_EXECUTED' ||
-    actionType === 'IMMUNE_SYSTEM_ROLLBACK' ||
-    actionType === 'TICK_FAILED'
-  ) {
-    return 'critical';
-  }
-  if (
-    actionType === 'REPLAY_ATTACK_PREVENTED' ||
-    actionType === 'DAEMON_STOPPED' ||
-    actionType === 'INFERENCE_FALLBACK'
-  ) {
-    return 'warning';
-  }
+  if (CRITICAL_ACTIONS.has(actionType)) return 'critical';
+  if (WARNING_ACTIONS.has(actionType)) return 'warning';
   return 'info';
 }
 
@@ -732,6 +750,7 @@ export async function buildSnapshot(
   );
   const inference: MissionControlInferenceView = {
     mode: options.inference?.mode ?? persistedInference.mode ?? inferenceConfig.mode,
+    ceilingMode: options.inference?.ceilingMode ?? persistedInference.ceilingMode ?? inferenceConfig.mode,
     providerId: options.inference?.providerId ?? persistedInference.providerId ?? activeInferenceProvider?.id ?? null,
     providerModel: options.inference?.providerModel ?? persistedInference.providerModel ?? activeInferenceProvider?.model ?? null,
     callsUsed: options.inference?.callsUsed ?? persistedInference.callsUsed ?? 0,
@@ -739,6 +758,26 @@ export async function buildSnapshot(
     source: options.inference?.source ?? persistedInference.source ?? (activeInferenceProvider ? 'provider' : 'deterministic'),
     fallbackReason: options.inference?.fallbackReason ?? persistedInference.fallbackReason ?? null,
   };
+
+  // Latest startup preflight outcome (newest-first action list).
+  const preflightAction = actions.find(
+    (action) =>
+      action.component === 'inference' &&
+      (action.actionType === 'INFERENCE_PREFLIGHT_OK' || action.actionType === 'INFERENCE_PREFLIGHT_FAILED')
+  );
+  let inferencePreflight: InferencePreflightSnapshot | null = null;
+  if (preflightAction) {
+    let details: Record<string, unknown> = {};
+    try { details = JSON.parse(preflightAction.details) as Record<string, unknown>; } catch { details = {}; }
+    inferencePreflight = {
+      ok: preflightAction.actionType === 'INFERENCE_PREFLIGHT_OK',
+      at: preflightAction.timestamp,
+      mode: typeof details.mode === 'string' ? details.mode : null,
+      reason: typeof details.reason === 'string' ? details.reason : null,
+      passed: Array.isArray(details.passed) ? details.passed as PreflightProviderPass[] : [],
+      failed: Array.isArray(details.failed) ? details.failed as PreflightProviderFailure[] : [],
+    };
+  }
 
   return {
     generatedAt: now,
@@ -811,6 +850,7 @@ export async function buildSnapshot(
       reason: probe.reason ?? null,
     },
     inference,
+    inferencePreflight,
     config: sanitized,
     degraded,
     tombstone,

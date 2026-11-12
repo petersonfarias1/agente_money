@@ -4,7 +4,7 @@ profile: light · handoff: on (sem declaração de perfil no projeto)
 
 Sources:
 
-- `.tasks/dashboard-control-and-free-mode.md` — os 53 critérios, as suas invariantes e as duas questões em `Unresolved`; nada em `Unresolved` se resolve durante a construção.
+- `.tasks/dashboard-control-and-free-mode.md` — os 61 critérios (54–57 acrescentados pela AD-002, 58–61 pela AD-003), as suas invariantes e as questões em `Unresolved` (a 1 fechada pela AD-002); nada mais em `Unresolved` se resolve durante a construção.
 - `.design/dashboard-control-and-free-mode.md` — **vinculativo para a interface**: tabelas de estado da tela de controlo, contratos `POST /api/agent/start|stop`, semântica do `405` com `Allow`, e as decisões-chave 1–8.
 - `.specs/STATE.md` — AD-001, o registo a atualizar na mesma entrada das rotas.
 - Código existente — as convenções que os checks reutilizam: `DashboardServer.handle` (gate de método → `authorized()` → `route`), `deriveLiveness`, `sanitizeConfig`, `registerTeardownHook`, `executeMitosisLifecycleTick`, `validateModification`, o padrão `Invalid <VAR>` de `config.ts` e os títulos `Tn-Fnn-nn:` dos testes.
@@ -15,7 +15,7 @@ Sources:
 - Reinício automático do agente — o painel só inicia e para.
 - Trocar de modo sem reiniciar o agente.
 - Exploração agendada de código e vigilância contínua da árvore — gatilho reativo apenas; rollback destrutivo nunca corre sobre trabalho alheio.
-- Escolher e verificar provedores free — `Unresolved 1` (bloqueia ativação); fila vazia por omissão.
+- ~~Escolher e verificar provedores free — `Unresolved 1`~~ — resolvido em 2026-11-12 (AD-002), ver C57; medir os tetos de cota continua fora do escopo.
 - Provar que uma proposta de modelo passa o portão em produção — `Unresolved 2` (bloqueia ativação); a prova aqui é o ciclo com provedor de teste.
 - Escrever fora do escopo constitucional, alterar tiers ou artigos da Constituição.
 - Mudar o esquema SQLite — nada a migrar.
@@ -135,18 +135,18 @@ Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test
 **C28** - Falha do provedor atual: fila avança na ordem configurada e o motivo do salto fica registado como alerta
 Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="provider failure advances the queue in configured order" test/unit/inference_mode.test.ts`
 
-**C29** - Fila free toda indisponível: queda no determinístico, tick continua, alerta registado
+**C29** - Fila free toda indisponível depois do arranque: queda no determinístico, tick continua, alerta registado (no arranque vale C55)
 Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="empty free queue falls back to deterministic with alert" test/unit/inference_mode.test.ts`
 
 **C30** - Ao atingir `INFERENCE_CAP_PER_TICK` (5): nenhuma chamada adicional, resto no determinístico sem erro, contador visível no snapshot
 Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="cap of five stops further calls" test/unit/inference_mode.test.ts`
 Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="snapshot shows inference call counter" test/unit/dashboard_snapshot.test.ts`
 
-**C31** - Modo `paid` com chaves: snapshot mostra `paid`; despesa registada só quando o provedor reporta custo, sem número nenhum l ançamento inventado
+**C31** - Modo `paid` com chaves: snapshot mostra `paid`; despesa = custo reportado ou tokens reportados × preços do `.env`; sem tokens ou sem preço nenhum lançamento é inventado (revisto AD-002)
 Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="paid mode records expense only when provider reports cost" test/unit/inference_mode.test.ts`
 Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="snapshot shows inference mode paid" test/unit/dashboard_snapshot.test.ts`
 
-**C32** - `paid` sem chave ou cota: queda no determinístico com alerta — nunca paragem
+**C32** - `paid` perde chave ou cota depois do arranque: queda no determinístico com alerta — nunca paragem a meio (no arranque vale C55)
 Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="paid without key degrades to deterministic and never stops" test/unit/inference_mode.test.ts`
 
 **C33** - Troca no `.env` só tem efeito no próximo arranque; o painel mostra o modo efetivo
@@ -159,12 +159,45 @@ Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test
 **C35** - `INFERENCE_MODE` inválido ou `INFERENCE_CAP_PER_TICK` não inteiro positivo: arranque falha com `Invalid INFERENCE_MODE` / `Invalid INFERENCE_CAP_PER_TICK`
 Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="invalid INFERENCE_MODE or cap fails startup with Invalid message" test/unit/inference_mode.test.ts`
 
+### S4b - Preflight de LLM no arranque (acrescentado 2026-11-12, AD-002)
+
+**C54** - Preflight pinga a fila do modo; os que falham saem da fila e ficam registados
+Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="keeps providers that answer and drops the ones that fail" test/unit/llm_startup.test.ts`
+
+**C55** - Sem provedor ou nenhum responde: arranque recusado, saída `78`, `INFERENCE_PREFLIGHT_FAILED`, IPC e `500 AgentStartFailed`
+Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="throws NoLLMAvailableError" test/unit/llm_startup.test.ts`
+Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="bootstrapAgent exits 78" test/unit/llm_startup.test.ts`
+Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="surfaces agent-start-failed" test/unit/llm_startup.test.ts`
+Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="answers 500 AgentStartFailed" test/unit/dashboard_server.test.ts`
+
+**C56** - `POST /api/agent/start { mode }` sobrepõe o modo só nesse arranque; valor ou chave inválida → `400`
+Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="forwards an explicit inference mode" test/unit/dashboard_server.test.ts`
+Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="rejects an unknown mode or extra keys" test/unit/dashboard_server.test.ts`
+Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="forwards the mode to the child env" test/unit/llm_startup.test.ts`
+
+**C57** - Fila montada pelas chaves do `.env` na ordem configurada; chaves de modelo contam como ausentes
+Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="isUsableApiKey rejects absent and placeholder keys|free mode assembles|leaves Ollama out|paid mode includes per-token pricing" test/unit/llm_startup.test.ts`
+
+### S4c - Teto de modo por tier (acrescentado 2026-11-12, AD-003)
+
+**C58** - Teto `paid`: pago só em VERDE, free nos outros tiers sem `EXPENSE_LLM`; teto `free` nunca chama pago
+Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="C58" test/unit/inference_ceiling.test.ts`
+
+**C59** - Teto `paid` monta a fila paga seguida da fila free
+Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="C59" test/unit/inference_ceiling.test.ts`
+
+**C60** - Mudança de modo efetivo registada (`INFERENCE_MODE_DOWNGRADED` / `_RESTORED`) e exposta no snapshot como aviso
+Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="C60" test/unit/inference_ceiling.test.ts`
+
+**C61** - Com teto `paid`, preflight free só avisa: falha → `INFERENCE_FREE_PREFLIGHT_FAILED` e o arranque continua; passa → fila free no daemon
+Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="C61" test/unit/inference_ceiling.test.ts`
+
 ### S5 - Estimador Polymarket · 4 files · 35 KB · ~9k
 
 **C36** - Candidato dentro do teto: `estimatedProb` vem do modelo e alimenta edge e Quarter-Kelly
 Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="candidate within cap uses model estimatedProb in edge and Kelly" test/unit/polymarket.test.ts`
 
-**C37** - Fora do teto ou sem provedor: comportamento idêntico ao determinístico atual
+**C37** - Fora do teto: comportamento idêntico ao determinístico atual (sem provedor o arranque é recusado — C55)
 Proof: `node --experimental-strip-types --no-warnings=ExperimentalWarning --test --test-name-pattern="candidate beyond cap or no provider is identical to today" test/unit/polymarket.test.ts`
 
 **C38** - Fila indisponível no meio da varredura: degrau seguinte ou determinístico sem travar o tick, com alerta

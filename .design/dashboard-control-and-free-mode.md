@@ -53,6 +53,7 @@ O painel passa a ser o supervisor do agente: um estado de processo fora do banco
 2. **Instância única: `start` é recusado se o ficheiro de processo aponta para um processo vivo, e recusado se existe `tombstone.json`.** É a propriedade que o AD-001 protegia, agora garantida por reserva atómica do pid em vez de por ausência de rotas de escrita; a corrida entre dois `start` simultâneos tem de perder sem criar o segundo processo.
 3. **Nunca sai com um tick em curso: `stop` pede a paragem, espera o tick terminar e só depois o agente encerra.** O sinal atual encerra imediatamente por cima do tick em voo; a paragem forçada está proibida mesmo quando o agente não responde, porque cortar uma operação a meio é exatamente o dano que o stop existe para evitar.
 4. **O modo de inferência e o teto de chamadas por tick são configuração lida na arranque, e o estimador determinístico é sempre o degrau final.** O modo mora em `.env` ao lado das chaves que já lá estão, é mostrado pelo painel e trocá-lo exige reiniciar o agente — operação que este mesmo trabalho passa a permitir a partir do painel. Sem teto, a varredura sem paginação estoura qualquer cota no primeiro tick; com o determinístico por baixo, o agente nunca fica parado por falta de modelo, e a perda de provedor vira alerta no painel em vez de paragem — o valor do teto fica na fatia que o configura.
+   > **Revisto em 2026-11-12 (AD-002):** o arranque passa a exigir LLM. Um preflight bloqueante pinga todos os provedores do modo; os que falham saem da fila nesse arranque, e se nenhum responder o arranque é **recusado** (`NoLLMAvailable`, saída `78`, motivo na trilha e no painel). A queda para o determinístico continua a valer **depois** de um arranque bem-sucedido, tick a tick. O modo continua a morar em `.env`, mas `POST /api/agent/start` pode sobrepô-lo só para esse arranque (`{ mode }`).
 5. **A inferência é consultiva: alimenta estimativas, mas quem autoriza continua a ser o código determinístico.** O Quarter-Kelly e a trava de 5% continuam a calcular e a recusar sobre o número recebido, e o firewall anti-spam mantém os seus bloqueios duros independentes do score — nenhum modelo autoriza operação nem levanta uma submissão acima do obstáculo sozinho.
 6. **Os motores morrem com o agente: o que arranca dentro do processo — o paywall x402 — pára no stop e no permadeath, pelo mecanismo de desligamento que já está registado.** É o contrato que o Artigo IV já exige e que o teste de desligamento automático já prova; o que falta é o arranque, e acionar os hooks também na paragem graciosa — hoje eles correm só dentro do permadeath, de modo que um stop normal os não alcança. Uma porta ocupada não derruba o agente: fica sem paywall e regista o motivo.
 7. **O portão imunológico só corre quando o agente tem uma proposta própria, e nunca faz rollback nem commit de alterações que não sejam dessa proposta.** O rollback é destrutivo (`reset --hard` e `clean -fd`) e o commit varre a árvore inteira, e o portão faz rollback já na primeira barreira, antes de olhar para quem sujou a árvore — correr sem primeiro provar que a sujeira é só da proposta levaria o seu trabalho não commitado. Esta é a frase que o plano não derivaria por si.
@@ -93,7 +94,7 @@ Derivable from the repository, left to the plan: a convenção de sinal e de for
 | Agente terminou sozinho (permadeath ou sinal) | processo morto é detetado, estado volta a `stopped` | `stopped` + `liveness` continua a derivar do último tick |
 | Painel reiniciado com agente vivo | readoção do processo pelo pid guardado | `running` |
 
-`POST /api/agent/start` `{}` → `200 { state: "running" }`
+`POST /api/agent/start` `{}` ou `{ "mode": "free" | "paid" }` → `200 { state: "running" }`; arranque recusado pelo preflight → `500 { error: "AgentStartFailed", reason }` (revisto 2026-11-12, AD-002)
 `POST /api/agent/stop` `{}` → `200 { state: "stopped" }` — a rota bloqueia até o processo sair e pode demorar o tempo de um tick inteiro; o estado `stopping` é gravado de imediato para que a tela o mostre durante a espera.
 
 O estado de controlo (`stopped` \| `starting` \| `running` \| `stopping` \| `unknown`) entra no snapshot existente, pelo que o SSE o atualiza sem rota de leitura nova.
@@ -182,18 +183,22 @@ Alternatives considered: paywall como processo próprio, sobrevivendo ao stop do
 | Modo `free`, provedor sem cota/chave/fora do ar | passa ao seguinte da fila, na ordem configurada | alerta no painel com o motivo do salto |
 | Fila free toda indisponível | cai no estimador determinístico e o tick continua | alerta; agente segue a operar |
 | Teto por tick atingido | o resto do tick usa o determinístico, sem erro | contador de chamadas do tick no snapshot |
-| Modo `paid`, chaves presentes | ramo pago é usado e as despesas são registadas quando o provedor reporta custo | snapshot: `mode: "paid"` |
+| Arranque, nenhum provedor do modo responde ao preflight | arranque recusado com `NoLLMAvailable`, saída `78` (AD-002) | `500 AgentStartFailed` com o motivo; alerta crítico `INFERENCE_PREFLIGHT_FAILED` |
+| Arranque, parte da fila falha o preflight | os que falharam saem da fila neste arranque | alerta `INFERENCE_PROVIDER_UNAVAILABLE` por provedor; campo "Preflight de LLM" |
+| Modo `paid`, chaves presentes | ramo pago é usado e a despesa é calculada a partir dos tokens reportados × preços por 1M tokens do `.env` (AD-002) | snapshot: `mode: "paid"` |
+| Teto `paid`, tier AMARELO ou abaixo | o modo efetivo desce para `free` enquanto o tier não voltar a VERDE; nenhuma despesa de LLM (AD-003) | snapshot: `mode: "free"`, `ceilingMode: "paid"`; aviso `INFERENCE_MODE_DOWNGRADED` |
+| Teto `paid`, fila free falha o preflight | o arranque continua; abaixo de VERDE o tick usa o determinístico (AD-003) | aviso `INFERENCE_FREE_PREFLIGHT_FAILED` |
 | Modo `paid`, sem chave ou sem cota | mesma queda do modo free — degradação observável, nunca paragem | alerta |
-| Modo trocado no `.env` | efeito só no próximo arranque do agente | painel mostra o modo efetivo, não o pretendido |
+| Modo trocado no `.env` | efeito só no próximo arranque do agente; o valor passa a ser o teto (AD-003) | painel mostra o modo efetivo e, quando diferem, o teto |
 | Probabilidade devolve fora de `(0, 1)` ou não numérica | descartada, degrau seguinte da fila | alerta com o valor rejeitado |
 
 Nenhuma tabela nova: os saltos de degrau entram na trilha de auditoria existente. As chaves novas só caem na máscara `***` se o nome delas contiver `apikey`, `token`, `secret` ou `passphrase` — `GROQ_API_KEY` é coberta, `GROQ_KEY` passaria em claro para `/api/config`, e é isso que o plano tem de garantir ao nomear as variáveis.
 
 Alternatives considered: modo persistido no SQLite e trocável pelo painel sem reiniciar — wins if switching modes must take effect without restarting the agent; it costs a second write path into a panel that still does not write to the database.
 
-1. Qual provedor free entra na fila — default: fila vazia documentada no `.env.example`, escolhida pelo spike da fatia seguinte, porque os tetos de cota não puderam ser verificados aqui.
+1. Qual provedor free entra na fila — ~~default: fila vazia~~ **resolvido em 2026-11-12 (AD-002):** fila montada pelas chaves presentes no `.env`, na ordem `openrouter, groq, gemini, ollama` (`INFERENCE_FREE_ORDER`); chaves de modelo contam como ausentes; `INFERENCE_PROVIDERS` continua a ser o override.
 2. Valor do teto por tick — default: `5`, conservador sob qualquer cota e o primeiro número a ajustar no primeiro tick real.
-3. Registo de despesa no modo pago — default: só quando o provedor reporta custo; sem número reportado não se inventa lançamento.
+3. Registo de despesa no modo pago — ~~default: só quando o provedor reporta custo~~ **revisto em 2026-11-12 (AD-002):** custo = tokens reportados pelo provedor × preços por 1M tokens configurados no `.env`; sem divisão de tokens reportada ou sem preço, nenhum lançamento é inventado.
 
 ### Estimador Polymarket
 
@@ -205,7 +210,7 @@ Alternatives considered: modo persistido no SQLite e trocável pelo painel sem r
 | Candidato fora do teto | usa o estimador determinístico de hoje | idêntico ao comportamento atual |
 | Fila de provedores indisponível no meio da varredura | degrau seguinte ou determinístico, sem travar o tick | alerta |
 | Modelo devolve probabilidade inválida | descartada, degrau seguinte | alerta com o valor rejeitado |
-| Sem provedor configurado | determinístico, como hoje | nada muda |
+| Sem provedor configurado | ~~determinístico, como hoje~~ o arranque é recusado pelo preflight (AD-002) | o agente não arranca |
 
 O teto é consumido por ordem de chegada dos candidatos — a ordenação por edge é impossível antes de estimar.
 
