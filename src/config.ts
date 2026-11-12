@@ -18,6 +18,9 @@ import type {
   NetworkMode,
   LogLevel,
   SupportedChain,
+  InferenceConfig,
+  InferenceMode,
+  TokenPricing,
 } from './types.ts';
 
 export class ConfigValidationError extends Error {
@@ -124,6 +127,197 @@ export function isKnownMockPrivateKey(key: string): boolean {
     normalized ===
       '0x0000000000000000000000000000000000000000000000000000000000000001'
   );
+}
+
+/**
+ * Parses the ordered LLM provider queue from a JSON array environment variable.
+ */
+export function parseInferenceProviders(raw: string | undefined): Array<{
+  id: string;
+  type: 'ollama' | 'openai';
+  baseUrl: string;
+  apiKey?: string;
+  model: string;
+  free: boolean;
+} & TokenPricing> {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new ConfigValidationError(
+      `Invalid INFERENCE_PROVIDERS: '${raw}'. Must be a JSON array of provider objects.`
+    );
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new ConfigValidationError(
+      `Invalid INFERENCE_PROVIDERS: '${raw}'. Must be a JSON array of provider objects.`
+    );
+  }
+
+  return parsed.map((entry: unknown, index: number) => {
+    const record = (entry ?? {}) as Record<string, unknown>;
+    const type: 'ollama' | 'openai' = record.type === 'openai' ? 'openai' : 'ollama';
+    return {
+      id: String(record.id ?? `provider-${index}`),
+      type,
+      baseUrl: String(record.baseUrl ?? (type === 'ollama' ? 'http://localhost:11434' : 'https://api.openai.com/v1')),
+      apiKey: typeof record.apiKey === 'string' ? record.apiKey : undefined,
+      model: String(record.model ?? (type === 'ollama' ? 'llama3' : 'gpt-4o-mini')),
+      free: record.free === undefined ? type === 'ollama' : Boolean(record.free),
+      ...(typeof record.priceInPerMTok === 'number' ? { priceInPerMTok: record.priceInPerMTok } : {}),
+      ...(typeof record.priceOutPerMTok === 'number' ? { priceOutPerMTok: record.priceOutPerMTok } : {}),
+    };
+  });
+}
+
+/**
+ * Values that look like template placeholders are treated as absent keys, so
+ * a `.env` copied from `.env.example` never counts as a configured provider.
+ */
+export function isUsableApiKey(value: string | undefined): value is string {
+  const key = (value ?? '').trim();
+  if (!key) return false;
+  return !/^(mock[-_].*|change[-_]?me.*|your[-_].*|placeholder.*|x{3,}|<.*>|sk-\.\.\..*|\.\.\.)$/i.test(key);
+}
+
+export type FreePresetId = 'openrouter' | 'groq' | 'gemini' | 'ollama';
+export type PaidPresetId = 'anthropic' | 'gemini';
+
+export const DEFAULT_FREE_ORDER: FreePresetId[] = ['openrouter', 'groq', 'gemini', 'ollama'];
+export const DEFAULT_PAID_ORDER: PaidPresetId[] = ['anthropic', 'gemini'];
+
+const GEMINI_OPENAI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai';
+
+function parsePresetOrder<T extends string>(
+  raw: string | undefined,
+  allowed: readonly T[],
+  variable: string
+): T[] {
+  const text = (raw ?? '').trim();
+  if (!text) return [...allowed];
+  const ids = text.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
+  for (const id of ids) {
+    if (!allowed.includes(id as T)) {
+      throw new ConfigValidationError(
+        `Invalid ${variable}: unknown provider '${id}'. Allowed: ${allowed.join(', ')}.`
+      );
+    }
+  }
+  return [...new Set(ids)] as T[];
+}
+
+function parsePrice(raw: string | undefined, fallback: number, variable: string): number {
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new ConfigValidationError(`Invalid ${variable}: '${raw}'. Must be a non-negative number (USD per 1M tokens).`);
+  }
+  return value;
+}
+
+type ProviderEntry = InferenceConfig['providers'][number];
+
+interface PresetDefinition {
+  /** Provider id written into the queue (Gemini differs per mode). */
+  id: string;
+  type: ProviderEntry['type'];
+  /** Env variable holding the key; Ollama is keyless and keyed by its URL. */
+  keyVar?: string;
+  baseUrlVar: string;
+  defaultBaseUrl?: string;
+  modelVar: string;
+  defaultModel: string;
+  /** Paid presets only: env variables and defaults for per-token prices. */
+  pricing?: { inVar: string; inDefault: number; outVar: string; outDefault: number };
+}
+
+const FREE_PRESETS: Record<FreePresetId, PresetDefinition> = {
+  openrouter: {
+    id: 'openrouter', type: 'openai', keyVar: 'OPENROUTER_API_KEY',
+    baseUrlVar: 'OPENROUTER_BASE_URL', defaultBaseUrl: 'https://openrouter.ai/api/v1',
+    modelVar: 'OPENROUTER_FREE_MODEL', defaultModel: 'meta-llama/llama-3.3-70b-instruct:free',
+  },
+  groq: {
+    id: 'groq', type: 'openai', keyVar: 'GROQ_API_KEY',
+    baseUrlVar: 'GROQ_BASE_URL', defaultBaseUrl: 'https://api.groq.com/openai/v1',
+    modelVar: 'GROQ_MODEL', defaultModel: 'llama-3.3-70b-versatile',
+  },
+  gemini: {
+    id: 'gemini-free', type: 'openai', keyVar: 'GEMINI_API_KEY',
+    baseUrlVar: 'GEMINI_BASE_URL', defaultBaseUrl: GEMINI_OPENAI_BASE_URL,
+    modelVar: 'GEMINI_FREE_MODEL', defaultModel: 'gemini-2.0-flash',
+  },
+  ollama: {
+    id: 'ollama', type: 'ollama',
+    baseUrlVar: 'OLLAMA_BASE_URL',
+    modelVar: 'OLLAMA_MODEL', defaultModel: 'llama3.1',
+  },
+};
+
+const PAID_PRESETS: Record<PaidPresetId, PresetDefinition> = {
+  anthropic: {
+    id: 'anthropic', type: 'openai', keyVar: 'ANTHROPIC_API_KEY',
+    baseUrlVar: 'ANTHROPIC_BASE_URL', defaultBaseUrl: 'https://api.anthropic.com/v1',
+    modelVar: 'ANTHROPIC_MODEL', defaultModel: 'claude-haiku-4-5',
+    pricing: { inVar: 'ANTHROPIC_PRICE_IN_PER_MTOK', inDefault: 1.0, outVar: 'ANTHROPIC_PRICE_OUT_PER_MTOK', outDefault: 5.0 },
+  },
+  gemini: {
+    id: 'gemini-paid', type: 'openai', keyVar: 'GEMINI_API_KEY',
+    baseUrlVar: 'GEMINI_BASE_URL', defaultBaseUrl: GEMINI_OPENAI_BASE_URL,
+    modelVar: 'GEMINI_PAID_MODEL', defaultModel: 'gemini-2.5-flash',
+    pricing: { inVar: 'GEMINI_PRICE_IN_PER_MTOK', inDefault: 0.3, outVar: 'GEMINI_PRICE_OUT_PER_MTOK', outDefault: 2.5 },
+  },
+};
+
+/** Returns the provider entry for a preset, or null when its key/URL is absent. */
+function resolvePreset(
+  preset: PresetDefinition,
+  env: Record<string, string | undefined>,
+  free: boolean
+): ProviderEntry | null {
+  const envOrDefault = (name: string, fallback: string) => (env[name] ?? '').trim() || fallback;
+  let apiKey: string | undefined;
+  if (preset.keyVar) {
+    if (!isUsableApiKey(env[preset.keyVar])) return null;
+    apiKey = env[preset.keyVar]!.trim();
+  }
+  const baseUrl = envOrDefault(preset.baseUrlVar, preset.defaultBaseUrl ?? '');
+  if (!baseUrl) return null; // keyless presets (Ollama) are opt-in through their URL
+  return {
+    id: preset.id,
+    type: preset.type,
+    free,
+    baseUrl,
+    ...(apiKey ? { apiKey } : {}),
+    model: envOrDefault(preset.modelVar, preset.defaultModel),
+    ...(preset.pricing
+      ? {
+          priceInPerMTok: parsePrice(env[preset.pricing.inVar], preset.pricing.inDefault, preset.pricing.inVar),
+          priceOutPerMTok: parsePrice(env[preset.pricing.outVar], preset.pricing.outDefault, preset.pricing.outVar),
+        }
+      : {}),
+  };
+}
+
+/**
+ * Builds the ordered provider queue for a mode from the keys present in the
+ * environment. Providers whose key is missing or a placeholder are skipped;
+ * Ollama is opt-in through OLLAMA_BASE_URL.
+ */
+export function buildPresetProviders(
+  env: Record<string, string | undefined>,
+  mode: InferenceMode
+): InferenceConfig['providers'] {
+  const queue: Array<PresetDefinition> = mode === 'free'
+    ? parsePresetOrder(env.INFERENCE_FREE_ORDER, DEFAULT_FREE_ORDER, 'INFERENCE_FREE_ORDER').map((id) => FREE_PRESETS[id])
+    : parsePresetOrder(env.INFERENCE_PAID_ORDER, DEFAULT_PAID_ORDER, 'INFERENCE_PAID_ORDER').map((id) => PAID_PRESETS[id]);
+  return queue
+    .map((preset) => resolvePreset(preset, env, mode === 'free'))
+    .filter((entry): entry is ProviderEntry => entry !== null);
 }
 
 /**
@@ -448,6 +642,38 @@ export function loadConfig(
     env.MOCK_SIMULATE_ERRORS !== undefined &&
     env.MOCK_SIMULATE_ERRORS.trim().toLowerCase() === 'true';
 
+  // 11.5 Inference Mode & LLM Provider Queue (free | paid, deterministic fallback)
+  const rawInferenceMode = (env.INFERENCE_MODE || 'free').trim().toLowerCase();
+  if (rawInferenceMode !== 'free' && rawInferenceMode !== 'paid') {
+    throw new ConfigValidationError(
+      `Invalid INFERENCE_MODE: '${env.INFERENCE_MODE}'. Must be 'free' or 'paid'.`
+    );
+  }
+  const inferenceMode: InferenceMode = rawInferenceMode;
+
+  const rawInferenceCapText = env.INFERENCE_CAP_PER_TICK || '5';
+  const rawInferenceCap = Number(rawInferenceCapText);
+  if (!/^\d+$/.test(rawInferenceCapText) || !Number.isSafeInteger(rawInferenceCap) || rawInferenceCap <= 0) {
+    throw new ConfigValidationError(
+      `Invalid INFERENCE_CAP_PER_TICK: '${env.INFERENCE_CAP_PER_TICK}'. Must be a positive integer.`
+    );
+  }
+
+  // Advanced override: a non-empty INFERENCE_PROVIDERS JSON queue wins;
+  // otherwise the queue is assembled from the provider keys present in .env.
+  // A paid ceiling also carries the free queue: below VERDE the engine steps
+  // down to it (AD-003). The engine filters the queue by the effective mode.
+  const explicitProviders = parseInferenceProviders(env.INFERENCE_PROVIDERS);
+  const inference: InferenceConfig = {
+    mode: inferenceMode,
+    capPerTick: rawInferenceCap,
+    providers: explicitProviders.length > 0
+      ? explicitProviders
+      : inferenceMode === 'paid'
+        ? [...buildPresetProviders(env, 'paid'), ...buildPresetProviders(env, 'free')]
+        : buildPresetProviders(env, 'free'),
+  };
+
   // 12. Final AppConfig assembly
   const appConfig: AppConfig = {
     nodeEnv,
@@ -493,6 +719,7 @@ export function loadConfig(
       mitosisMultiplier,
       royaltyPercentage,
     },
+    inference,
     mock: {
       useMockApis,
       initialBalanceUsd: Number.isNaN(mockBalanceUsd) ? 75.0 : mockBalanceUsd,

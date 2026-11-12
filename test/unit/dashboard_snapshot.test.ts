@@ -25,6 +25,7 @@ import {
   tierTransitions,
   winRate,
 } from '../../src/modules/dashboard/snapshot.ts';
+import type { MissionControlInferenceView } from '../../src/modules/dashboard/snapshot.ts';
 
 const NOW = 1_800_000_000_000;
 const temporaryDirs: string[] = [];
@@ -62,6 +63,19 @@ function makeConfig(): AppConfig {
     x402: { port: 4020, priceUsdc: 0.01, settlementChain: 'base' },
     bounties: { githubToken: 'ghp-secret', minRewardUsd: 10 },
     evolution: { mitosisMultiplier: 3, royaltyPercentage: 5 },
+    inference: {
+      mode: 'free',
+      capPerTick: 5,
+      providers: [
+        {
+          id: 'ollama',
+          type: 'ollama',
+          baseUrl: 'http://localhost:11434',
+          model: 'llama3',
+          free: true,
+        },
+      ],
+    },
     mock: { useMockApis: true, initialBalanceUsd: 75, simulateErrors: false },
   };
 }
@@ -85,6 +99,10 @@ function recordTick(db: DatabaseService, balanceUsd: number, timestamp = NOW - 1
     balanceUsd,
     timestamp,
   });
+}
+
+function inferenceView(snapshot: Record<string, unknown>): MissionControlInferenceView {
+  return snapshot.inference as MissionControlInferenceView;
 }
 
 describe('Mission Control snapshot', () => {
@@ -365,6 +383,89 @@ describe('Mission Control snapshot', () => {
       assert.equal(tier.tier, expected.tier);
       assert.equal(tier.modelClass, expected.modelClass);
     }
+  });
+
+  it('C27 snapshot shows inference mode free with provider', async () => {
+    const { dir, dbPath } = createDb((db) => recordTick(db, 100));
+    const snapshot = await buildSnapshot(
+      { seq: 0 },
+      {
+        dbPath,
+        tombstonePath: path.join(dir, 'none.json'),
+        x402HealthUrl: null,
+        config: makeConfig(),
+        now: () => NOW,
+      }
+    );
+
+    assert.equal(inferenceView(snapshot).mode, 'free');
+    assert.equal(inferenceView(snapshot).providerId, 'ollama');
+    assert.equal(inferenceView(snapshot).providerModel, 'llama3');
+    assert.equal(inferenceView(snapshot).source, 'provider');
+  });
+
+  it('C30 snapshot shows inference call counter', async () => {
+    const { dir, dbPath } = createDb((db) => recordTick(db, 100));
+    const snapshot = await buildSnapshot(
+      { seq: 0 },
+      {
+        dbPath,
+        tombstonePath: path.join(dir, 'none.json'),
+        x402HealthUrl: null,
+        config: makeConfig(),
+        now: () => NOW,
+        inference: { callsUsed: 2, capPerTick: 5 },
+      }
+    );
+
+    assert.equal(inferenceView(snapshot).callsUsed, 2);
+    assert.equal(inferenceView(snapshot).capPerTick, 5);
+  });
+
+  it('C31 snapshot shows inference mode paid', async () => {
+    const { dir, dbPath } = createDb((db) => recordTick(db, 100));
+    const paidConfig: AppConfig = {
+      ...makeConfig(),
+      inference: { mode: 'paid', capPerTick: 5, providers: [] },
+    };
+    const snapshot = await buildSnapshot(
+      { seq: 0 },
+      {
+        dbPath,
+        tombstonePath: path.join(dir, 'none.json'),
+        x402HealthUrl: null,
+        config: paidConfig,
+        now: () => NOW,
+      }
+    );
+
+    assert.equal(inferenceView(snapshot).mode, 'paid');
+    assert.equal(inferenceView(snapshot).source, 'deterministic');
+  });
+
+  it('C33 snapshot shows effective mode not intended', async () => {
+    const { dir, dbPath } = createDb((db) => recordTick(db, 100));
+    const paidConfig: AppConfig = {
+      ...makeConfig(),
+      inference: { mode: 'paid', capPerTick: 5, providers: [] },
+    };
+    const snapshot = await buildSnapshot(
+      { seq: 0 },
+      {
+        dbPath,
+        tombstonePath: path.join(dir, 'none.json'),
+        x402HealthUrl: null,
+        config: paidConfig,
+        now: () => NOW,
+      }
+    );
+
+    // The effective mode stays `paid` even when the queue holds no usable provider;
+    // the degradation to deterministic is carried by `source` and `fallbackReason`.
+    const inference = inferenceView(snapshot);
+    assert.equal(inference.mode, 'paid');
+    assert.equal(inference.providerId, null);
+    assert.equal(inference.source, 'deterministic');
   });
 
   it('C34 allowedOperations: derived from research and self-modification flags', () => {

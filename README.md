@@ -83,12 +83,12 @@ O arquivo [`src/constitution.md`](src/constitution.md) estabelece as leis inviol
 
 Implementado em [`src/core/metabolism.ts`](src/core/metabolism.ts):
 
-| Tier | Faixa de Saldo (USD) | Intervalo de Heartbeat | Modelo de Inferência | Ações Permitidas |
+| Tier | Faixa de Saldo (USD) | Intervalo de Heartbeat | Classe de Modelo (inferência efetiva) | Ações Permitidas |
 | :--- | :--- | :--- | :--- | :--- |
-| **VERDE** | `> $50.00` | `60s` (`60000ms`) | `frontier-pro` | Trading Polymarket, Paywall x402, Bounties, Auto-Modificação Imunológica e Mitose Darwiniana. |
-| **AMARELO** | `$10.00 – $50.00` | `300s` (`300000ms`) | `economy-flash` | Trading conservador, Paywall x402 e Bounties. Suspende auto-modificação e mitose. |
-| **LARANJA** | `$0.01 – $9.99` | `60s` (`60000ms`) | `local-survival-nano` | Modo sobrevivência: suspende apostas especulativas (Polymarket); mantém apenas receitas sem risco de perda de principal (x402 e Bounties). Sub-tier crítico ativa abaixo de `$2.00`. |
-| **VERMELHO** | `<= $0.00` | Imediato | `none` | Aciona imediatamente o protocolo de **Permadeath** ([`src/core/death.ts`](src/core/death.ts)). |
+| **VERDE** | `> $50.00` | `60s` (`60000ms`) | `advanced` — o modo do `.env` (teto) | Trading Polymarket, Paywall x402, Bounties, Auto-Modificação Imunológica e Mitose Darwiniana. |
+| **AMARELO** | `$10.00 – $50.00` | `300s` (`300000ms`) | `economic` — sempre a fila free (AD-003) | Trading conservador, Paywall x402 e Bounties. Suspende auto-modificação e mitose. |
+| **LARANJA** | `$0.01 – $9.99` | `60s` (`60000ms`) | `survival` — sem LLM, estimador determinístico | Modo sobrevivência: suspende apostas especulativas (Polymarket); mantém apenas receitas sem risco de perda de principal (x402 e Bounties). Sub-tier crítico ativa abaixo de `$2.00`. |
+| **VERMELHO** | `<= $0.00` | Imediato | `survival` — sem LLM (permadeath) | Aciona imediatamente o protocolo de **Permadeath** ([`src/core/death.ts`](src/core/death.ts)). |
 
 ---
 
@@ -214,6 +214,18 @@ O projeto opera em três modos selecionáveis pela variável `NETWORK_MODE` no a
    - Conecta-se à **Base Mainnet** (`chainId: 8453`) e **Polygon PoS Mainnet** (`chainId: 137`).
    - Requer `AGENT_PRIVATE_KEY` dedicada (nunca utilize chaves pessoais) e `MOTHER_WALLET_ADDRESS` válida e diferente do endereço zero.
 
+### 8.1. Inferência (LLM) e preflight de arranque
+
+`INFERENCE_MODE` (`free` | `paid`) escolhe a fila de provedores. A fila é montada a partir das chaves presentes no `.env` — chaves vazias ou de modelo (`mock-...`, `change-me`, `your-...`) contam como ausentes:
+
+- **`free`**: OpenRouter, Groq, Gemini e Ollama (opt-in via `OLLAMA_BASE_URL`), na ordem de `INFERENCE_FREE_ORDER`.
+- **`paid`**: Anthropic e Gemini, na ordem de `INFERENCE_PAID_ORDER`. A despesa `EXPENSE_LLM` é calculada a partir dos tokens reportados pelo provedor × preços por 1M tokens (`*_PRICE_IN_PER_MTOK` / `*_PRICE_OUT_PER_MTOK`).
+- `INFERENCE_PROVIDERS` (JSON) continua a ser o override avançado: se não estiver vazio, substitui a fila montada pelas chaves.
+
+**O modo é um teto e o tier só o rebaixa** (AD-003, Artigo III): com `paid`, só o tier VERDE usa a fila paga. Em AMARELO o agente passa à fila free, sem despesa de LLM, e volta ao pago quando regressa a VERDE. Cada troca fica na trilha (`INFERENCE_MODE_DOWNGRADED` / `INFERENCE_MODE_RESTORED`) e o painel mostra o modo efetivo ao lado do teto. Em LARANJA e VERMELHO não há chamadas a LLM. O modo `free` nunca sobe para pago. Por isso, com `paid` a fila free também é montada pelas chaves do `.env`.
+
+No arranque o agente faz um **preflight bloqueante**: pinga todos os provedores do modo em paralelo, descarta os que falham e, se nenhum responder, **recusa o arranque** com `NoLLMAvailable` e código de saída `78`. O motivo fica na trilha (`INFERENCE_PREFLIGHT_FAILED`) e aparece no painel. Com `paid`, a fila free também é pingada, mas só como aviso: se falhar, fica `INFERENCE_FREE_PREFLIGHT_FAILED`, o arranque continua e, abaixo de VERDE, o agente usa o estimador determinístico. Depois de arrancar, falhas transitórias de provedor continuam a cair no estimador determinístico por tick.
+
 Consulte todos os parâmetros disponíveis em [`.env.example`](.env.example). As variáveis do painel de observabilidade (`DASHBOARD_HOST`, `DASHBOARD_PORT`, `DASHBOARD_TOKEN`) estão detalhadas na [seção 10.2](#102-configuração).
 
 ---
@@ -221,8 +233,12 @@ Consulte todos os parâmetros disponíveis em [`.env.example`](.env.example). As
 ## 9. Execução e Comandos de Teste
 
 ```bash
-# Iniciar o daemon do agente
+# Iniciar o daemon do agente (modo de inferência do .env)
 npm start
+
+# Iniciar forçando o modo de inferência (sobrepõe INFERENCE_MODE do .env)
+npm run start:free
+npm run start:paid
 
 # Subir o Mission Control (painel somente leitura) em http://127.0.0.1:7070
 npm run dashboard
@@ -317,6 +333,8 @@ Todas as rotas são `GET`; qualquer outro método responde `405 MethodNotAllowed
 | `/api/config` | Configuração sanitizada, sem chaves privadas ou segredos. |
 | `/api/export` | Exportação de `actions`, `ledger`, `positions` ou `lineage` em `csv` ou `json` (até 10.000 linhas). |
 | `/api/health` | Saúde do processo: `status`, estado do banco, `uptimeMs`, `seq` e `version`. |
+| `POST /api/agent/start` | Inicia o agente. Corpo `{}` ou `{ "mode": "free" \| "paid" }` (sobrepõe `INFERENCE_MODE` só para este arranque). `200` running, `409` `Permadeath`/`AlreadyRunning`, `500` `AgentStartFailed` com `reason` (ex.: preflight de LLM recusado), `401` sem credencial. |
+| `POST /api/agent/stop` | Pede a paragem graciosa e espera o tick em curso terminar. `200 { state: "stopped" }`. |
 
 ### 10.5. Segurança e limites
 

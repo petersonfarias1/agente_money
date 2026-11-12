@@ -36,6 +36,19 @@ export type ProbabilityEstimator = (
 ) => Promise<{ pYes: number; pNo: number } | null> | { pYes: number; pNo: number } | null;
 
 /**
+ * Deterministic last-degrau estimator used when no inference provider answers.
+ */
+export async function defaultProbabilityEstimator(
+  market: PolymarketMarket
+): Promise<{ pYes: number; pNo: number } | null> {
+  // Deterministic heuristics based on market ID for testing
+  if (market.id.includes('eth-upgrade')) return { pYes: 0.65, pNo: 0.35 };
+  if (market.id.includes('cpi-above')) return { pYes: 0.40, pNo: 0.60 }; // NO edge
+  if (market.id.includes('btc-150k')) return { pYes: 0.45, pNo: 0.55 }; // Disadvantage on YES
+  return null;
+}
+
+/**
  * Standard deterministic mock catalog for offline development and testing.
  */
 export function getStandardMockMarkets(): PolymarketMarket[] {
@@ -221,13 +234,7 @@ export class PolymarketScanner {
     // Default heuristic estimator for mock markets if none provided
     const resolveProb =
       estimator ??
-      (async (m: PolymarketMarket) => {
-        // Deterministic heuristics based on market ID for testing
-        if (m.id.includes('eth-upgrade')) return { pYes: 0.65, pNo: 0.35 };
-        if (m.id.includes('cpi-above')) return { pYes: 0.40, pNo: 0.60 }; // NO edge
-        if (m.id.includes('btc-150k')) return { pYes: 0.45, pNo: 0.55 }; // Disadvantage on YES
-        return null;
-      });
+      defaultProbabilityEstimator;
 
     for (const market of markets) {
       const priceYes = Number(market.outcomePrices[0]);

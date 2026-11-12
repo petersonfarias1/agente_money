@@ -28,6 +28,10 @@ export type MetabolicTier = 'VERDE' | 'AMARELO' | 'LARANJA' | 'VERMELHO';
 
 export type ModelClass = 'advanced' | 'economic' | 'survival';
 
+export type InferenceMode = 'free' | 'paid';
+
+export type InferenceProviderType = 'ollama' | 'openai';
+
 export type LedgerEntryType =
   | 'INCOME_X402'
   | 'INCOME_POLYMARKET'
@@ -60,6 +64,29 @@ export interface NetworkConfig {
   baseUsdcAddress: string;
   polygonUsdcAddress: string;
   isMock: boolean;
+}
+
+/** Per-token prices used to book EXPENSE_LLM in paid mode. */
+export interface TokenPricing {
+  /** USD per 1M prompt tokens. */
+  priceInPerMTok?: number;
+  /** USD per 1M completion tokens. */
+  priceOutPerMTok?: number;
+}
+
+export interface InferenceProviderConfig extends TokenPricing {
+  id: string;
+  type: InferenceProviderType;
+  baseUrl: string;
+  apiKey?: string;
+  model: string;
+  free: boolean;
+}
+
+export interface InferenceConfig {
+  mode: InferenceMode;
+  capPerTick: number;
+  providers: InferenceProviderConfig[];
 }
 
 export interface AppConfig {
@@ -104,6 +131,7 @@ export interface AppConfig {
     mitosisMultiplier: number;
     royaltyPercentage: number;
   };
+  inference: InferenceConfig;
   mock: {
     useMockApis: boolean;
     initialBalanceUsd: number;

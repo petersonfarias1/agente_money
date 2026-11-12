@@ -20,6 +20,16 @@ export const LIVENESS_LABELS = {
   UNKNOWN: 'sem dados',
 };
 
+export function controlViewModel(control = {}) {
+  const state = control?.state ?? 'stopped';
+  return {
+    state,
+    startEnabled: state === 'stopped',
+    stopEnabled: state === 'running' || state === 'starting',
+    label: control?.error && state === 'stopped' ? `${state}: ${control.error}` : state,
+  };
+}
+
 /**
  * Formats USD in pt-BR without relying on Intl being present.
  * 1234.5 -> "US$ 1.234,50"
@@ -110,19 +120,6 @@ export function parseSseFrame(frame) {
     }
   }
   return result;
-}
-
-const CRITICAL_ACTIONS = new Set([
-  'PERMADEATH_EXECUTED',
-  'IMMUNE_SYSTEM_ROLLBACK',
-  'TICK_FAILED',
-]);
-const WARNING_ACTIONS = new Set(['REPLAY_ATTACK_PREVENTED', 'DAEMON_STOPPED']);
-
-export function alertSeverity(actionType) {
-  if (CRITICAL_ACTIONS.has(actionType)) return 'critical';
-  if (WARNING_ACTIONS.has(actionType)) return 'warning';
-  return 'info';
 }
 
 /**

@@ -15,7 +15,7 @@ const PUBLIC_DIR = path.join(process.cwd(), 'src', 'modules', 'dashboard', 'publ
 describe('Mission Control assets', () => {
   it('C33 provider badge: the models screen states that no inference provider is configured', () => {
     const html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
-    assert.match(html, /sem provedor de inferência configurado/);
+    assert.match(html, /id="inference-provider-state"[^>]*>sem provedor de inferência configurado</);
   });
 
   it('ships every asset the SPA imports, with no external origin', () => {

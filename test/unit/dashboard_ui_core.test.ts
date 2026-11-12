@@ -9,6 +9,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   detailView,
+  controlViewModel,
   downsample,
   formatUsd,
   listState,
@@ -18,6 +19,18 @@ import {
 } from '../../src/modules/dashboard/public/ui_core.js';
 
 describe('Mission Control UI core', () => {
+  it('initial snapshot shows stopped with start enabled', () => {
+    assert.deepEqual(controlViewModel(), {
+      state: 'stopped', startEnabled: true, stopEnabled: false, label: 'stopped',
+    });
+  });
+
+  it('screen renders starting while the child has not confirmed', () => {
+    assert.deepEqual(controlViewModel({ state: 'starting', pid: 123 }), {
+      state: 'starting', startEnabled: false, stopEnabled: true, label: 'starting',
+    });
+  });
+
   it('C1 overviewModel: projects tier, formatted balance, cycles and liveness', () => {
     const snapshot = {
       tier: { tier: 'VERDE', modelClass: 'advanced' },
