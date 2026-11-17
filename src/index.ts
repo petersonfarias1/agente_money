@@ -30,6 +30,7 @@ import { createInferenceProvider } from './modules/inference/provider.ts';
 import type { InferenceEngineOptions, InferenceProvider } from './modules/inference/types.ts';
 import { NoLLMAvailableError, runInferencePreflight, type PreflightResult } from './modules/inference/preflight.ts';
 import { defaultProbabilityEstimator, PolymarketScanner } from './modules/polymarket/scanner.ts';
+import { OrderManager } from './modules/polymarket/order.ts';
 import { X402Server } from './modules/micropayments/server.ts';
 import { executeMitosisLifecycleTick } from './evolution/mitosis.ts';
 import fs from 'node:fs';
@@ -85,6 +86,8 @@ export class HeartbeatDaemon {
   private currentTier?: MetabolicTier;
   private tickPromise: Promise<TickResult> | null = null;
   private x402Server?: X402Server;
+  private orderManager?: OrderManager;
+  private readonly evaluatedBounties = new Map<string, number>();
   private stopRequested = false;
   private immuneProposalGenerator?: (failure: string) => Promise<ModificationProposal | null>;
   private pendingImmuneFailure?: string;
@@ -414,6 +417,16 @@ export class HeartbeatDaemon {
             }
           );
           if (this.database?.isOpen()) {
+            if (!this.orderManager) {
+              this.orderManager = new OrderManager(
+                this.database,
+                this.wallet,
+                this.config.network.isMock
+              );
+            }
+            const openMarketIds = new Set(
+              this.database.getPositions(100, 'OPEN').map((p) => p.marketId)
+            );
             for (const opportunity of opportunities) {
               this.database.recordAction({
                 component: 'polymarket',
@@ -430,6 +443,19 @@ export class HeartbeatDaemon {
                 balanceUsd,
                 timestamp: Date.now(),
               });
+              if (opportunity.kelly.authorized && !openMarketIds.has(opportunity.market.id)) {
+                try {
+                  await this.orderManager.placeOrder(opportunity, {
+                    paperTrading: this.config.networkMode !== 'mainnet',
+                  });
+                  openMarketIds.add(opportunity.market.id);
+                } catch (orderErr) {
+                  this.recordDispatchFailure(
+                    'POLYMARKET_ORDER_FAILED',
+                    (orderErr as Error).message
+                  );
+                }
+              }
             }
           }
         } catch (error) {
@@ -441,7 +467,13 @@ export class HeartbeatDaemon {
         try {
           const bounties = new BountiesScanner({ config: this.config, database: this.database });
           const tasks = await bounties.scanBounties();
+          const now = Date.now();
+          const REEVAL_TTL_MS = 15 * 60 * 1000;
           for (const task of tasks) {
+            const lastEvalAt = this.evaluatedBounties.get(task.id);
+            if (lastEvalAt !== undefined && now - lastEvalAt < REEVAL_TTL_MS) {
+              continue;
+            }
             const deterministic = () =>
               BountyEvaluator.evaluate(task, { minRewardUsd: this.config.bounties.minRewardUsd }).score;
             const outcome = tierStatus.tier === 'LARANJA'
@@ -451,6 +483,7 @@ export class HeartbeatDaemon {
               modelScore: outcome.score,
               inferenceOrigin: outcome.source,
             });
+            this.evaluatedBounties.set(task.id, now);
           }
         } catch (error) {
           this.recordDispatchFailure('BOUNTY_SCAN_FAILED', (error as Error).message);
