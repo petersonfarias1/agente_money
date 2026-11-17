@@ -21,6 +21,7 @@ import type {
 } from './types.ts';
 import { getConfig } from './config.ts';
 import { DatabaseService, getDatabase } from './core/database.ts';
+import type { InferenceUsageRecord } from './modules/monitor/types.ts';
 import { ApexWallet, getWallet } from './core/wallet.ts';
 import { evaluateTier } from './core/metabolism.ts';
 import { executePermadeath, registerTeardownHook } from './core/death.ts';
@@ -128,8 +129,10 @@ export class HeartbeatDaemon {
   public async start(): Promise<void> {
     if (this.isRunning) return;
     this.isRunning = true;
-    if (process.env.AGENT_CONTROL_FILE && process.send) {
+    if (process.env.AGENT_CONTROL_FILE) {
       try { fs.writeFileSync(process.env.AGENT_CONTROL_FILE, `${process.pid}\n`); } catch { /* dashboard owns reservation */ }
+    }
+    if (process.env.AGENT_CONTROL_FILE && process.send) {
       process.send('agent-ready');
     }
     await this.tick();
@@ -247,6 +250,23 @@ export class HeartbeatDaemon {
         timestamp: Date.now(),
       });
     } catch { /* inference must continue if status persistence is unavailable */ }
+    // Append-only monitor index: one row per inference status event (provider
+    // walkthrough + fallback), so the daemon keeps a full history without
+    // touching the read-only actions/audit trail.
+    try {
+      this.database.recordInferenceUsage({
+        tickAt: Date.now(),
+        mode: event.mode,
+        ceilingMode: event.ceilingMode,
+        providerId: event.providerId,
+        providerModel: event.providerModel,
+        callsUsed: event.callsUsed,
+        capPerTick: event.capPerTick,
+        source: event.source,
+        fallbackReason: event.fallbackReason,
+        recordedAt: Date.now(),
+      });
+    } catch { /* the monitor index must never stall inference */ }
   }
 
   /** Records the tier-driven step down (or restore) of the inference mode (AD-003). */
@@ -749,6 +769,12 @@ const isMainModule =
   fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 
 if (isMainModule) {
+  if (!process.env.AGENT_CONTROL_FILE) {
+    process.env.AGENT_CONTROL_FILE = path.resolve(process.cwd(), '.agent.pid');
+  }
+  if (!process.env.AGENT_STOP_FILE) {
+    process.env.AGENT_STOP_FILE = path.resolve(process.cwd(), '.agent.stop');
+  }
   bootstrapAgent().catch((error) => {
     console.error('[APEX AEA] Fatal bootstrap error:', error);
     process.exit(1);

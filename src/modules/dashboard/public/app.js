@@ -135,8 +135,8 @@ function connect() {
     attempt = 0;
     setConnection('live', 'ao vivo');
     try {
-      const frame = parseSseFrame(event.data);
-      const next = typeof frame.data === 'object' && frame.data ? frame.data : null;
+      const parsed = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+      const next = typeof parsed === 'object' && parsed ? parsed : null;
       if (!next) return;
       lastSeq = Number(event.lastEventId || next.seq || lastSeq);
       applySnapshot(next);
@@ -218,8 +218,17 @@ async function changeAgentState(action) {
   if (modeSelect) modeSelect.disabled = true;
   try {
     const payload = action === 'start' && modeSelect ? { mode: modeSelect.value } : {};
-    await postControl(action, payload);
+    const result = await postControl(action, payload);
+    renderControl(result);
+    try {
+      const latest = await fetchJson('/api/snapshot');
+      lastSeq = Number(latest.seq ?? lastSeq);
+      applySnapshot(latest);
+    } catch {
+      // Next SSE snapshot will synchronize within 2s
+    }
   } catch (error) {
+    renderControl(snapshot?.control ?? { state: 'stopped' });
     const label = error.code === 'Permadeath'
       ? 'agente encerrado por permadeath'
       : error.code === 'AlreadyRunning'

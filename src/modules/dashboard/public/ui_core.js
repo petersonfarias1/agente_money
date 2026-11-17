@@ -35,6 +35,7 @@ export function controlViewModel(control = {}) {
  * 1234.5 -> "US$ 1.234,50"
  */
 export function formatUsd(value) {
+  if (value === null || value === undefined || value === '') return '—';
   const n = Number(value);
   if (!Number.isFinite(n)) return '—';
   const negative = n < 0;

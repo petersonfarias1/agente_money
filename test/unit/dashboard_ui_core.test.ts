@@ -54,6 +54,9 @@ describe('Mission Control UI core', () => {
     assert.equal(formatUsd(1234.5), 'US$ 1.234,50');
     assert.equal(formatUsd(0), 'US$ 0,00');
     assert.equal(formatUsd(1234567.891), 'US$ 1.234.567,89');
+    assert.equal(formatUsd(null), '—');
+    assert.equal(formatUsd(undefined), '—');
+    assert.equal(formatUsd(''), '—');
   });
 
   it('C9 reconnectDelay: 2000, 4000, 8000, 16000, 30000 and capped at 30000', () => {
