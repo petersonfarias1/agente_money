@@ -656,7 +656,13 @@ export async function buildSnapshot(
     'INFERENCE_FREE_PREFLIGHT_FAILED',
   ]);
   const newestAction = actions[0] ?? null;
-  const newestBalanceAction = actions.find((a) => !PREFLIGHT_ACTIONS.has(a.actionType)) ?? null;
+  const newestTickOrDeath = actions.find(
+    (a) => a.actionType === 'TICK_EVALUATED' || a.actionType === 'PERMADEATH_EXECUTED'
+  );
+  const newestBalanceAction =
+    newestTickOrDeath ??
+    actions.find((a) => !PREFLIGHT_ACTIONS.has(a.actionType)) ??
+    null;
   if (newestBalanceAction) lastBalanceUsd = newestBalanceAction.balanceUsd;
 
   let tierStatus: TierStatus | null = null;
