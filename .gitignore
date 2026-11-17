@@ -37,3 +37,12 @@ npm-debug.log*
 # Resumo e Anotações Operacionais do Usuário
 RESUMO_ORIENTACOES.md
 
+# Local test temp directories
+.tmp_*/
+
+# AI Assistant & Code Intelligence Artifacts
+.claude/
+CLAUDE.md
+AGENTS.md
+.agents/skills/gitnexus-*/
+

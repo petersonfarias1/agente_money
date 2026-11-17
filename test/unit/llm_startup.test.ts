@@ -7,7 +7,6 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { buildPresetProviders, isUsableApiKey, loadConfig } from '../../src/config.ts';
 import { runInferencePreflight, NoLLMAvailableError } from '../../src/modules/inference/preflight.ts';
@@ -171,7 +170,7 @@ describe('LLM startup — refused start', () => {
       pid = 4321;
       unref(): void {}
     }
-    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-llm-startup-'));
+    const rootDir = fs.mkdtempSync(path.join(process.cwd(), '.tmp_llm_startup_'));
     let capturedEnv: NodeJS.ProcessEnv | undefined;
     try {
       const control = new AgentControl({

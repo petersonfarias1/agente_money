@@ -319,7 +319,7 @@ Abra `http://127.0.0.1:7070`. O painel também funciona com o agente parado: nes
 
 ### 10.4. API HTTP e streaming
 
-Todas as rotas são `GET`; qualquer outro método responde `405 MethodNotAllowed`. Com `DASHBOARD_TOKEN` configurado, requisições sem credencial respondem `401 Unauthorized`.
+As rotas de observabilidade são `GET` e as rotas de controle do agente (`/api/agent/start` e `/api/agent/stop`) aceitam `POST`; qualquer outro método responde `405 MethodNotAllowed`. Com `DASHBOARD_TOKEN` configurado, requisições sem credencial respondem `401 Unauthorized`.
 
 | Rota | Descrição |
 | :--- | :--- |

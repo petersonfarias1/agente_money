@@ -8,7 +8,6 @@
 import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import type { AppConfig } from '../../src/types.ts';
 import { DatabaseService } from '../../src/core/database.ts';
@@ -81,7 +80,7 @@ function makeConfig(): AppConfig {
 }
 
 function createDb(seed?: (db: DatabaseService) => void): { dir: string; dbPath: string } {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-dashboard-'));
+  const dir = fs.mkdtempSync(path.join(process.cwd(), '.tmp_dashboard_snap_'));
   temporaryDirs.push(dir);
   const dbPath = path.join(dir, 'agent.db');
   const db = new DatabaseService(dbPath);
@@ -500,13 +499,13 @@ describe('Mission Control snapshot', () => {
   });
 
   it('C37 readTombstone absent: {present:false}', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-tombstone-'));
+    const dir = fs.mkdtempSync(path.join(process.cwd(), '.tmp_tombstone_absent_'));
     temporaryDirs.push(dir);
     assert.deepEqual(readTombstone(path.join(dir, 'nope.json')), { present: false });
   });
 
   it('C38 readTombstone invalid: {present:true, invalid:true, path}', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-tombstone-'));
+    const dir = fs.mkdtempSync(path.join(process.cwd(), '.tmp_tombstone_invalid_'));
     temporaryDirs.push(dir);
     const filePath = path.join(dir, 'tombstone.json');
     fs.writeFileSync(filePath, '{ this is not json', 'utf8');

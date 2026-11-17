@@ -1,10 +1,17 @@
-import { describe, it } from 'node:test';
+import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { AgentControl } from '../../src/modules/dashboard/agent_control.ts';
+
+const temporaryDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of temporaryDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 class FakeChild extends EventEmitter {
   unrefCalled = false;
@@ -15,7 +22,8 @@ class FakeChild extends EventEmitter {
 }
 
 function fixture(options: { live?: Set<number>; autoReady?: boolean; failSpawn?: boolean } = {}) {
-  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-agent-control-'));
+  const rootDir = fs.mkdtempSync(path.join(process.cwd(), '.tmp_agent_control_'));
+  temporaryDirs.push(rootDir);
   const live = options.live ?? new Set<number>();
   let spawnCount = 0;
   let child: FakeChild | undefined;

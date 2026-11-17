@@ -10,7 +10,6 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
@@ -82,7 +81,7 @@ function makeConfig(): AppConfig {
 }
 
 function createDb(seed?: (db: DatabaseService) => void): { dir: string; dbPath: string } {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-dashboard-server-'));
+  const dir = fs.mkdtempSync(path.join(process.cwd(), '.tmp_dashboard_server_'));
   temporaryDirs.push(dir);
   const dbPath = path.join(dir, 'agent.db');
   const db = new DatabaseService(dbPath);
@@ -481,7 +480,7 @@ describe('Mission Control server', () => {
   });
 
   it('C44 database unavailable: a non-SQLite file answers 503', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-dashboard-bad-'));
+    const dir = fs.mkdtempSync(path.join(process.cwd(), '.tmp_dashboard_bad_'));
     temporaryDirs.push(dir);
     const dbPath = path.join(dir, 'agent.db');
     fs.writeFileSync(dbPath, 'not a sqlite database', 'utf8');
@@ -500,7 +499,7 @@ describe('Mission Control server', () => {
   });
 
   it('C45 database absent: 200 with liveness UNKNOWN and zeroed aggregates', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apex-dashboard-empty-'));
+    const dir = fs.mkdtempSync(path.join(process.cwd(), '.tmp_dashboard_empty_'));
     temporaryDirs.push(dir);
 
     const { base } = await startServer({

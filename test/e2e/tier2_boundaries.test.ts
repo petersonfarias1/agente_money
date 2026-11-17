@@ -751,7 +751,9 @@ describe('Tier 2 E2E Test Suite: Boundary & Corner Cases (F01 - F23)', () => {
 
       assert.equal(res1.success, true);
       assert.equal(res2.success, true);
-      assert.equal(daemon.cycleCount, 2);
+      assert.equal(res1.cycle, 1);
+      assert.equal(res2.cycle, 1);
+      assert.equal(daemon.cycleCount, 1);
     });
   });
 

@@ -329,11 +329,15 @@ export function buildPresetProviders(
 export function loadConfig(
   envOverrides?: Record<string, string | undefined>
 ): AppConfig {
-  // 1. Try loading .env from process.cwd() if not already loaded
+  // 1. Try loading .env from process.cwd() if not in an isolated test environment
   const envFilePath = path.resolve(process.cwd(), '.env');
   const fileEnv: Record<string, string> = {};
+  const isTestEnvironment =
+    process.env.NODE_ENV === 'test' ||
+    envOverrides?.NODE_ENV === 'test' ||
+    process.env.NODE_TEST_CONTEXT !== undefined;
 
-  if (fs.existsSync(envFilePath)) {
+  if (!isTestEnvironment && fs.existsSync(envFilePath)) {
     try {
       const content = fs.readFileSync(envFilePath, 'utf8');
       Object.assign(fileEnv, parseEnvFile(content));
