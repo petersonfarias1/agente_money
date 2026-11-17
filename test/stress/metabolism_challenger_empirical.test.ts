@@ -237,6 +237,7 @@ describe('Challenger Empirical Verification: Metabolism & Deficit Permadeath', (
       const daemon = new HeartbeatDaemon({
         database: db,
         wallet,
+        tombstonePath: challengerTombstonePath,
       });
 
       // Cycle 1: healthy VERDE tick

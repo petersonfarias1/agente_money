@@ -700,7 +700,12 @@ describe('Tier 2 E2E Test Suite: Boundary & Corner Cases (F01 - F23)', () => {
         throw new Error('EXIT_0');
       });
 
-      const daemon = new HeartbeatDaemon({ wallet, database: db, config });
+      const daemon = new HeartbeatDaemon({
+        wallet,
+        database: db,
+        config,
+        tombstonePath: path.join(ctx.tempDir, 'tombstone.json'),
+      });
       try {
         await daemon.tick();
       } catch {
@@ -713,7 +718,12 @@ describe('Tier 2 E2E Test Suite: Boundary & Corner Cases (F01 - F23)', () => {
 
     it('T2-F09-02: Transient wallet RPC error recovery', async () => {
       wallet.setSimulateError(true);
-      const daemon = new HeartbeatDaemon({ wallet, database: db, config });
+      const daemon = new HeartbeatDaemon({
+        wallet,
+        database: db,
+        config,
+        tombstonePath: path.join(ctx.tempDir, 'tombstone.json'),
+      });
       const res = await daemon.tick();
 
       assert.equal(res.success, false);
@@ -746,7 +756,12 @@ describe('Tier 2 E2E Test Suite: Boundary & Corner Cases (F01 - F23)', () => {
     });
 
     it('T2-F09-05: Concurrent tick execution prevention', async () => {
-      const daemon = new HeartbeatDaemon({ wallet, database: db, config });
+      const daemon = new HeartbeatDaemon({
+        wallet,
+        database: db,
+        config,
+        tombstonePath: path.join(ctx.tempDir, 'tombstone.json'),
+      });
       const [res1, res2] = await Promise.all([daemon.tick(), daemon.tick()]);
 
       assert.equal(res1.success, true);

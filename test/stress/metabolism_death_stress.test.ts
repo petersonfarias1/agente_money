@@ -406,6 +406,7 @@ describe('Adversarial Stress Suite: Metabolism & Permadeath', () => {
       const daemon = new HeartbeatDaemon({
         database: db,
         wallet,
+        tombstonePath: stressTombstonePath,
         intervalOverrideMs: 10,
       });
 
@@ -469,6 +470,7 @@ describe('Adversarial Stress Suite: Metabolism & Permadeath', () => {
       const daemon = new HeartbeatDaemon({
         database: db,
         wallet: deficitWallet as any,
+        tombstonePath: stressTombstonePath,
       });
 
       await assert.rejects(

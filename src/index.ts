@@ -59,6 +59,7 @@ export interface HeartbeatDaemonOptions {
   config?: AppConfig;
   database?: DatabaseService;
   wallet?: WalletClient;
+  tombstonePath?: string;
   maxCycles?: number;
   intervalOverrideMs?: number;
   autoStart?: boolean;
@@ -78,6 +79,7 @@ export class HeartbeatDaemon {
   private wallet: WalletClient;
   private maxCycles?: number;
   private intervalOverrideMs?: number;
+  private tombstonePath?: string;
   private inference?: InferenceEngine;
   private onTickExecuted?: (result: TickResult) => Promise<void> | void;
   private timer?: NodeJS.Timeout;
@@ -98,6 +100,7 @@ export class HeartbeatDaemon {
     this.wallet = options?.wallet ?? getWallet();
     this.maxCycles = options?.maxCycles;
     this.intervalOverrideMs = options?.intervalOverrideMs;
+    this.tombstonePath = options?.tombstonePath;
     this.inference = options?.inference ?? new InferenceEngine({
       mode: this.config.inference.mode,
       capPerTick: this.config.inference.capPerTick,
@@ -359,6 +362,7 @@ export class HeartbeatDaemon {
         await executePermadeath({
           database: this.database,
           wallet: this.wallet,
+          tombstonePath: this.tombstonePath,
           finalBalanceUsd: balanceUsd,
           totalCyclesExecuted: this.cycleCount + 1,
           reason: tierStatus.reason,

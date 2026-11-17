@@ -487,7 +487,21 @@ describe('Mission Control snapshot', () => {
   // --------------------------------------------------------------- tombstone
 
   it('C36 readTombstone present: cause, death, cycles, revenue and expenses', () => {
-    const tombstone = readTombstone('tombstone.json');
+    const dir = fs.mkdtempSync(path.join(process.cwd(), '.tmp_tombstone_present_'));
+    temporaryDirs.push(dir);
+    const filePath = path.join(dir, 'tombstone.json');
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify({
+        reason: 'Terminal Insolvency (Constitution Article IV)',
+        deathTimestamp: '2026-11-17T00:00:00.000Z',
+        totalCyclesExecuted: 3,
+        totalRevenueGenerated: 12.5,
+        totalExpensesIncurred: 1.25,
+      }),
+      'utf8'
+    );
+    const tombstone = readTombstone(filePath);
 
     assert.equal(tombstone.present, true);
     assert.equal(tombstone.invalid, undefined);

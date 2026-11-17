@@ -413,6 +413,7 @@ describe('Tier 3 E2E Test Suite: Cross-Feature Combinations & Pairwise Integrati
         config: ctx.config,
         database: ctx.db,
         wallet: ctx.wallet,
+        tombstonePath: path.join(ctx.tempDir, 'tombstone.json'),
         intervalOverrideMs: 50,
       });
 

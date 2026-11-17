@@ -144,6 +144,7 @@ describe('Core HeartbeatDaemon Unit Tests', () => {
       const daemon = new HeartbeatDaemon({
         database: db,
         wallet,
+        tombstonePath: tmpTombstone,
         intervalOverrideMs: 5,
       });
 
