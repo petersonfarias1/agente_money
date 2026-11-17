@@ -648,8 +648,16 @@ export async function buildSnapshot(
     }
   }
 
+  const PREFLIGHT_ACTIONS = new Set([
+    'INFERENCE_PREFLIGHT_OK',
+    'INFERENCE_PREFLIGHT_FAILED',
+    'INFERENCE_PROVIDER_UNAVAILABLE',
+    'INFERENCE_FREE_PREFLIGHT_OK',
+    'INFERENCE_FREE_PREFLIGHT_FAILED',
+  ]);
   const newestAction = actions[0] ?? null;
-  if (newestAction) lastBalanceUsd = newestAction.balanceUsd;
+  const newestBalanceAction = actions.find((a) => !PREFLIGHT_ACTIONS.has(a.actionType)) ?? null;
+  if (newestBalanceAction) lastBalanceUsd = newestBalanceAction.balanceUsd;
 
   let tierStatus: TierStatus | null = null;
   if (lastBalanceUsd != null && Number.isFinite(lastBalanceUsd)) {

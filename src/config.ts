@@ -184,10 +184,10 @@ export function isUsableApiKey(value: string | undefined): value is string {
   return !/^(mock[-_].*|change[-_]?me.*|your[-_].*|placeholder.*|x{3,}|<.*>|sk-\.\.\..*|\.\.\.)$/i.test(key);
 }
 
-export type FreePresetId = 'openrouter' | 'groq' | 'gemini' | 'ollama';
+export type FreePresetId = 'openrouter' | 'opencode' | 'groq' | 'gemini' | 'ollama';
 export type PaidPresetId = 'anthropic' | 'gemini';
 
-export const DEFAULT_FREE_ORDER: FreePresetId[] = ['openrouter', 'groq', 'gemini', 'ollama'];
+export const DEFAULT_FREE_ORDER: FreePresetId[] = ['openrouter', 'opencode', 'groq', 'gemini', 'ollama'];
 export const DEFAULT_PAID_ORDER: PaidPresetId[] = ['anthropic', 'gemini'];
 
 const GEMINI_OPENAI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai';
@@ -239,7 +239,12 @@ const FREE_PRESETS: Record<FreePresetId, PresetDefinition> = {
   openrouter: {
     id: 'openrouter', type: 'openai', keyVar: 'OPENROUTER_API_KEY',
     baseUrlVar: 'OPENROUTER_BASE_URL', defaultBaseUrl: 'https://openrouter.ai/api/v1',
-    modelVar: 'OPENROUTER_FREE_MODEL', defaultModel: 'meta-llama/llama-3.3-70b-instruct:free',
+    modelVar: 'OPENROUTER_FREE_MODEL', defaultModel: 'openrouter/free',
+  },
+  opencode: {
+    id: 'opencode', type: 'openai', keyVar: 'OPENCODE_API_KEY',
+    baseUrlVar: 'OPENCODE_BASE_URL', defaultBaseUrl: 'https://opencode.ai/zen/v1',
+    modelVar: 'OPENCODE_MODEL', defaultModel: 'big-pickle',
   },
   groq: {
     id: 'groq', type: 'openai', keyVar: 'GROQ_API_KEY',

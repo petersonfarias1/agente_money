@@ -36,7 +36,7 @@ const BOUNTY_SYSTEM_PROMPT = [
   'Score feasibility and clarity, not reward size. Never authorize submission.',
 ].join(' ');
 
-const PING_SYSTEM_PROMPT = 'Health check. Reply with the JSON object {"ok":true} and nothing else.';
+const PING_SYSTEM_PROMPT = 'Connectivity check. Reply with {"ok":true}.';
 
 /**
  * Extracts a JSON object from a completion. Free-tier models frequently wrap
@@ -192,7 +192,7 @@ async function pingChatCompletion(
     ...params,
     messages: [
       { role: 'system', content: PING_SYSTEM_PROMPT },
-      { role: 'user', content: 'ping' },
+      { role: 'user', content: '1' },
     ],
   });
 }

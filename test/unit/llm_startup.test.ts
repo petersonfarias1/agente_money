@@ -50,7 +50,7 @@ describe('LLM startup — provider presets', () => {
 
     assert.deepEqual(providers.map((p) => p.id), ['groq', 'openrouter', 'ollama']);
     assert.equal(providers[0].model, 'llama-3.3-70b-versatile');
-    assert.equal(providers[1].model, 'meta-llama/llama-3.3-70b-instruct:free');
+    assert.equal(providers[1].model, 'openrouter/free');
     assert.equal(providers[2].type, 'ollama');
     assert.equal(providers[2].apiKey, undefined);
     assert.ok(providers.every((p) => p.free && p.priceInPerMTok === undefined));
